@@ -1,14 +1,16 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
 
+import { addPulls, type OwnedCard } from '../data/collection';
 import { loadCatalog } from '../data/catalog';
 import { openBooster } from '../data/openPack';
 import { BOOSTER_SETS } from '../data/sets';
 import type { BoosterSet, PulledCard } from '../data/types';
 
 const STORAGE_KEY = 'op-tcg-boosters-remaining';
+const COLLECTION_KEY = 'op-tcg-collection';
 
-export type Phase = 'select' | 'inspect' | 'reveal' | 'summary';
+export type Phase = 'select' | 'inspect' | 'reveal' | 'summary' | 'library';
 
 type GameContextValue = {
   ready: boolean;
@@ -16,10 +18,12 @@ type GameContextValue = {
   phase: Phase;
   selectedSet: BoosterSet | null;
   pulls: PulledCard[];
+  collection: OwnedCard[];
   selectSet: (id: string) => void;
   startReveal: () => void;
   finishReveal: () => void;
   goHome: () => void;
+  goLibrary: () => void;
   grantBooster: () => void;
 };
 
@@ -31,11 +35,15 @@ export function GameProvider({ children }: { children: ReactNode }) {
   const [phase, setPhase] = useState<Phase>('select');
   const [selectedSet, setSelectedSet] = useState<BoosterSet | null>(null);
   const [pulls, setPulls] = useState<PulledCard[]>([]);
+  const [collection, setCollection] = useState<OwnedCard[]>([]);
 
   useEffect(() => {
     Promise.all([
       AsyncStorage.getItem(STORAGE_KEY).then((value) => {
         if (value != null) setRemaining(Number(value));
+      }),
+      AsyncStorage.getItem(COLLECTION_KEY).then((value) => {
+        if (value) setCollection(JSON.parse(value) as OwnedCard[]);
       }),
       loadCatalog(),
     ]).finally(() => setReady(true));
@@ -46,6 +54,11 @@ export function GameProvider({ children }: { children: ReactNode }) {
     AsyncStorage.setItem(STORAGE_KEY, String(next)).catch(() => {});
   };
 
+  const persistCollection = (next: OwnedCard[]) => {
+    setCollection(next);
+    AsyncStorage.setItem(COLLECTION_KEY, JSON.stringify(next)).catch(() => {});
+  };
+
   const value = useMemo<GameContextValue>(
     () => ({
       ready,
@@ -53,6 +66,7 @@ export function GameProvider({ children }: { children: ReactNode }) {
       phase,
       selectedSet,
       pulls,
+      collection,
       selectSet: (id) => {
         if (remaining <= 0) return;
         const set = BOOSTER_SETS.find((item) => item.id === id);
@@ -63,6 +77,7 @@ export function GameProvider({ children }: { children: ReactNode }) {
       },
       startReveal: () => setPhase('reveal'),
       finishReveal: () => {
+        persistCollection(addPulls(collection, pulls));
         persistRemaining(Math.max(0, remaining - 1));
         setPhase('summary');
       },
@@ -71,9 +86,10 @@ export function GameProvider({ children }: { children: ReactNode }) {
         setSelectedSet(null);
         setPulls([]);
       },
+      goLibrary: () => setPhase('library'),
       grantBooster: () => persistRemaining(remaining + 1),
     }),
-    [ready, remaining, phase, selectedSet, pulls],
+    [ready, remaining, phase, selectedSet, pulls, collection],
   );
 
   return <GameContext.Provider value={value}>{children}</GameContext.Provider>;

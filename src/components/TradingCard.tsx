@@ -8,9 +8,10 @@ import { colorInk, rarityStyle } from '../theme';
 type Props = {
   card: PulledCard;
   compact?: boolean;
+  count?: number;
 };
 
-export function TradingCard({ card, compact }: Props) {
+export function TradingCard({ card, compact, count = 1 }: Props) {
   const [failed, setFailed] = useState(!card.imageUrl);
   const [loaded, setLoaded] = useState(false);
   const ink = colorInk[card.color];
@@ -36,6 +37,11 @@ export function TradingCard({ card, compact }: Props) {
         {card.variantLabel ? (
           <View style={[styles.badge, { backgroundColor: rare.tint }, compact && styles.badgeCompact]}>
             <Text style={[styles.badgeText, compact && styles.badgeTextCompact]}>{card.variantLabel}</Text>
+          </View>
+        ) : null}
+        {count > 1 ? (
+          <View style={[styles.count, compact && styles.countCompact]}>
+            <Text style={[styles.countText, compact && styles.countTextCompact]}>{count}</Text>
           </View>
         ) : null}
       </View>
@@ -86,6 +92,21 @@ const styles = StyleSheet.create({
   badgeCompact: { right: 4, top: 4, paddingHorizontal: 5, paddingVertical: 2 },
   badgeText: { color: '#140c04', fontWeight: '900', fontSize: 11, letterSpacing: 0.6 },
   badgeTextCompact: { fontSize: 8 },
+  count: {
+    position: 'absolute',
+    right: 6,
+    bottom: 8,
+    minWidth: 22,
+    height: 22,
+    borderRadius: 11,
+    backgroundColor: '#e8c36a',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 6,
+  },
+  countCompact: { minWidth: 18, height: 18, borderRadius: 9, right: 4, bottom: 6, paddingHorizontal: 4 },
+  countText: { color: '#1a1208', fontWeight: '900', fontSize: 12 },
+  countTextCompact: { fontSize: 10 },
   hidden: { opacity: 0, position: 'absolute' },
   boot: { alignItems: 'center', justifyContent: 'center', position: 'absolute' },
   card: { flex: 1, borderRadius: 12, padding: 8 },

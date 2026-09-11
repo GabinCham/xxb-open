@@ -7,7 +7,7 @@ import { useGame } from '../game/GameContext';
 import { colors } from '../theme';
 
 export function SelectScreen() {
-  const { remaining, selectSet, grantBooster } = useGame();
+  const { remaining, selectSet, grantBooster, goLibrary, collection } = useGame();
   const empty = remaining <= 0;
 
   return (
@@ -24,6 +24,10 @@ export function SelectScreen() {
         <View style={styles.badge}>
           <Text style={styles.badgeText}>{empty ? 'Plus de booster' : `${remaining} restant`}</Text>
         </View>
+
+        <Pressable style={styles.libraryBtn} onPress={goLibrary}>
+          <Text style={styles.libraryBtnText}>Bibliothèque · {collection.length}</Text>
+        </Pressable>
 
         <View style={styles.grid}>
           {BOOSTER_SETS.map((set) => (
@@ -65,6 +69,17 @@ const styles = StyleSheet.create({
     borderRadius: 999,
   },
   badgeText: { color: colors.gold, fontWeight: '700' },
+  libraryBtn: {
+    alignSelf: 'flex-start',
+    marginBottom: 22,
+    backgroundColor: '#1c1a14',
+    borderWidth: 1,
+    borderColor: colors.goldDim,
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: 999,
+  },
+  libraryBtnText: { color: colors.cream, fontWeight: '700' },
   grid: { flexDirection: 'row', flexWrap: 'wrap', gap: 16, justifyContent: 'center' },
   cell: { width: 160, alignItems: 'center', gap: 8 },
   setName: { color: colors.cream, fontWeight: '800' },

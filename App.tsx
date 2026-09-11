@@ -4,6 +4,7 @@ import { GestureHandlerRootView } from 'react-native-gesture-handler';
 
 import { GameProvider, useGame } from './src/game/GameContext';
 import { InspectScreen } from './src/screens/InspectScreen';
+import { LibraryScreen } from './src/screens/LibraryScreen';
 import { RevealScreen } from './src/screens/RevealScreen';
 import { SelectScreen } from './src/screens/SelectScreen';
 import { SummaryScreen } from './src/screens/SummaryScreen';
@@ -26,6 +27,7 @@ function Root() {
       {phase === 'inspect' ? <InspectScreen /> : null}
       {phase === 'reveal' ? <RevealScreen /> : null}
       {phase === 'summary' ? <SummaryScreen /> : null}
+      {phase === 'library' ? <LibraryScreen /> : null}
       <StatusBar style="light" />
     </>
   );

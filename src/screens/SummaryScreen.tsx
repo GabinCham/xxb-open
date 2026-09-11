@@ -16,7 +16,7 @@ function tone(card: { rarity: string; variantLabel?: string }) {
 }
 
 export function SummaryScreen() {
-  const { pulls, selectedSet, goHome } = useGame();
+  const { pulls, selectedSet, goHome, goLibrary } = useGame();
   const hits = pulls.map(hitLabel).filter((label): label is string => Boolean(label));
 
   return (
@@ -39,6 +39,9 @@ export function SummaryScreen() {
 
         <Pressable style={styles.cta} onPress={goHome}>
           <Text style={styles.ctaText}>Retour aux boosters</Text>
+        </Pressable>
+        <Pressable style={styles.secondary} onPress={goLibrary}>
+          <Text style={styles.secondaryText}>Voir la bibliothèque</Text>
         </Pressable>
       </ScrollView>
     </LinearGradient>
@@ -70,4 +73,6 @@ const styles = StyleSheet.create({
     borderRadius: 999,
   },
   ctaText: { color: '#1a1208', fontWeight: '800', fontSize: 16 },
+  secondary: { marginTop: 12, alignSelf: 'center', paddingVertical: 10 },
+  secondaryText: { color: colors.gold, fontWeight: '700', fontSize: 15 },
 });
