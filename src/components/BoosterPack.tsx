@@ -15,7 +15,7 @@ export function BoosterPack({ set, size = 'shop', disabled, onPress }: Props) {
   const hero = size === 'hero';
   const width = hero ? 220 : 132;
   const height = hero ? 340 : 204;
-  const textureUrl = officialPackTexture(set.folder, hero ? 1024 : 640);
+  const textureUrl = officialPackTexture(set.folder, hero ? 1024 : 640, set.tcgProductId);
 
   const body = (
     <View style={[styles.shadow, disabled && styles.disabled, { width, height }]}>

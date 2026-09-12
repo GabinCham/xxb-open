@@ -10,6 +10,7 @@ export const BOOSTER_SETS: BoosterSet[] = [
     packTo: '#1a0a0a',
     ribbon: '#e8c36a',
     folder: 'op01',
+    tcgProductId: 450085,
   },
   {
     id: 'op02',
@@ -20,6 +21,7 @@ export const BOOSTER_SETS: BoosterSet[] = [
     packTo: '#070b16',
     ribbon: '#7eb6ff',
     folder: 'op02',
+    tcgProductId: 455865,
   },
   {
     id: 'op03',
@@ -30,6 +32,7 @@ export const BOOSTER_SETS: BoosterSet[] = [
     packTo: '#0c0818',
     ribbon: '#c9a6ff',
     folder: 'op03',
+    tcgProductId: 477175,
   },
   {
     id: 'op05',
@@ -40,6 +43,7 @@ export const BOOSTER_SETS: BoosterSet[] = [
     packTo: '#061410',
     ribbon: '#7dffc2',
     folder: 'op05',
+    tcgProductId: 498733,
   },
   {
     id: 'op06',
@@ -50,6 +54,7 @@ export const BOOSTER_SETS: BoosterSet[] = [
     packTo: '#140c04',
     ribbon: '#ffb347',
     folder: 'op06',
+    tcgProductId: 515077,
   },
   {
     id: 'op09',
@@ -60,6 +65,7 @@ export const BOOSTER_SETS: BoosterSet[] = [
     packTo: '#0e0408',
     ribbon: '#ff6b8a',
     folder: 'op09',
+    tcgProductId: 563833,
   },
   {
     id: 'eb01',
@@ -70,6 +76,7 @@ export const BOOSTER_SETS: BoosterSet[] = [
     packTo: '#061014',
     ribbon: '#f4ead2',
     folder: 'eb01',
+    tcgProductId: 521160,
   },
   {
     id: 'op13',
@@ -80,6 +87,7 @@ export const BOOSTER_SETS: BoosterSet[] = [
     packTo: '#050814',
     ribbon: '#6cb6ff',
     folder: 'op13',
+    tcgProductId: 628351,
   },
   {
     id: 'op13-hits',
@@ -91,6 +99,7 @@ export const BOOSTER_SETS: BoosterSet[] = [
     ribbon: '#ffd36b',
     folder: 'op13',
     catalogCode: 'OP-13',
+    tcgProductId: 628351,
     guaranteedHit: true,
   },
   {
@@ -103,6 +112,7 @@ export const BOOSTER_SETS: BoosterSet[] = [
     ribbon: '#7ec8ff',
     folder: 'op14-eb04',
     catalogCode: 'OP14-EB04',
+    tcgProductId: 666577,
   },
   {
     id: 'op15',
@@ -114,6 +124,7 @@ export const BOOSTER_SETS: BoosterSet[] = [
     ribbon: '#ffd36b',
     folder: 'op15-eb04',
     catalogCode: 'OP15-EB04',
+    tcgProductId: 682056,
   },
   {
     id: 'op16',
@@ -124,6 +135,7 @@ export const BOOSTER_SETS: BoosterSet[] = [
     packTo: '#08060c',
     ribbon: '#ff6b6b',
     folder: 'op16',
+    tcgProductId: 689341,
   },
   {
     id: 'op17',
@@ -134,5 +146,6 @@ export const BOOSTER_SETS: BoosterSet[] = [
     packTo: '#08140c',
     ribbon: '#e8c36a',
     folder: 'op17',
+    tcgProductId: 704756,
   },
 ];

@@ -12,6 +12,7 @@ export type BoosterSet = {
   packTo: string;
   ribbon: string;
   folder: string;
+  tcgProductId?: number;
   catalogCode?: string;
   guaranteedHit?: boolean;
 };

@@ -9,6 +9,7 @@ import {
   Mesh,
   MeshStandardMaterial,
   Object3D,
+  ClampToEdgeWrapping,
   SRGBColorSpace,
   Texture,
   TextureLoader,
@@ -131,6 +132,10 @@ function PackModel({
         }
         texture.colorSpace = SRGBColorSpace;
         texture.flipY = false;
+        texture.wrapS = ClampToEdgeWrapping;
+        texture.wrapT = ClampToEdgeWrapping;
+        texture.repeat.set(0.9, 0.93);
+        texture.offset.set(0.05, 0.035);
         texture.anisotropy = 8;
         texture.needsUpdate = true;
         applied.current?.dispose();
