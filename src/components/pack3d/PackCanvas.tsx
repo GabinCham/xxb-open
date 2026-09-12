@@ -9,7 +9,6 @@ import {
   Mesh,
   MeshStandardMaterial,
   Object3D,
-  RepeatWrapping,
   SRGBColorSpace,
   Texture,
   TextureLoader,
@@ -132,9 +131,6 @@ function PackModel({
         }
         texture.colorSpace = SRGBColorSpace;
         texture.flipY = false;
-        texture.wrapS = RepeatWrapping;
-        texture.repeat.set(-1, 1);
-        texture.offset.set(1, 0);
         texture.anisotropy = 8;
         texture.needsUpdate = true;
         applied.current?.dispose();

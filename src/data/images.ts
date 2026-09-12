@@ -19,7 +19,7 @@ export function officialPackTexture(setFolder: string, width = 1024): string {
     output: 'png',
     q: '90',
     trim: 'auto',
-    flip: 'true',
+    trimtol: '24',
     w: String(width),
   });
   return `${PROXY}?${query.toString()}`;
