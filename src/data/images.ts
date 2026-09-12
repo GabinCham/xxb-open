@@ -13,6 +13,18 @@ export function officialPackImage(setFolder: string, width = 500): string {
   );
 }
 
+export function officialPackTexture(setFolder: string, width = 1024): string {
+  const query = new URLSearchParams({
+    url: `https://en.onepiece-cardgame.com/images/products/boosters/${setFolder}/img_thumbnail.png`,
+    output: 'png',
+    q: '90',
+    trim: 'auto',
+    flip: 'true',
+    w: String(width),
+  });
+  return `${PROXY}?${query.toString()}`;
+}
+
 export function officialCardImage(source: string, width = 600): string {
   return proxiedImage(source, width);
 }

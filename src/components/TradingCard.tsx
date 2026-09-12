@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { ActivityIndicator, Image, StyleSheet, Text, View } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 
@@ -9,15 +9,20 @@ type Props = {
   card: PulledCard;
   compact?: boolean;
   count?: number;
+  onReady?: () => void;
 };
 
-export function TradingCard({ card, compact, count = 1 }: Props) {
+export function TradingCard({ card, compact, count = 1, onReady }: Props) {
   const [failed, setFailed] = useState(!card.imageUrl);
   const [loaded, setLoaded] = useState(false);
   const ink = colorInk[card.color];
   const rare = rarityStyle[card.variantLabel ?? card.rarity] ?? rarityStyle[card.rarity];
   const width = compact ? 108 : 250;
   const height = compact ? 151 : 349;
+
+  useEffect(() => {
+    if (failed || loaded) onReady?.();
+  }, [failed, loaded, onReady]);
 
   if (!failed && card.imageUrl) {
     return (

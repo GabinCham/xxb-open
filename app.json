@@ -26,7 +26,13 @@
       "baseUrl": "/xxb-open"
     },
     "plugins": [
-      "expo-font"
+      "expo-font",
+      [
+        "expo-asset",
+        {
+          "assets": ["./assets/BoosterOP.glb", "./assets/OP_CARD.glb", "./assets/OP_CARD_BACK.webp"]
+        }
+      ]
     ]
   }
 }

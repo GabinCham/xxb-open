@@ -81,7 +81,7 @@ const styles = StyleSheet.create({
   },
   libraryBtnText: { color: colors.cream, fontWeight: '700' },
   grid: { flexDirection: 'row', flexWrap: 'wrap', gap: 16, justifyContent: 'center' },
-  cell: { width: 160, alignItems: 'center', gap: 8 },
+  cell: { width: 148, alignItems: 'center', gap: 8 },
   setName: { color: colors.cream, fontWeight: '800' },
   setTag: { color: colors.muted, fontSize: 11, textAlign: 'center' },
   test: { color: colors.gold, fontSize: 10, fontWeight: '800', letterSpacing: 1 },

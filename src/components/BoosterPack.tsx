@@ -1,8 +1,8 @@
-import { Image, Pressable, StyleSheet, Text, View } from 'react-native';
-import { LinearGradient } from 'expo-linear-gradient';
+import { Pressable, StyleSheet, Text, View } from 'react-native';
 
-import { officialPackImage } from '../data/images';
+import { officialPackTexture } from '../data/images';
 import type { BoosterSet } from '../data/types';
+import { PackCanvas } from './pack3d/PackCanvas';
 
 type Props = {
   set: BoosterSet;
@@ -13,18 +13,18 @@ type Props = {
 
 export function BoosterPack({ set, size = 'shop', disabled, onPress }: Props) {
   const hero = size === 'hero';
-  const width = hero ? 240 : 148;
-  const height = hero ? 240 : 148;
-  const uri = officialPackImage(set.folder, hero ? 720 : 400);
+  const width = hero ? 220 : 132;
+  const height = hero ? 340 : 204;
+  const textureUrl = officialPackTexture(set.folder, hero ? 1024 : 640);
 
   const body = (
     <View style={[styles.shadow, disabled && styles.disabled, { width, height }]}>
-      <LinearGradient colors={['#1a140c', set.packTo]} style={styles.pack}>
-        <Image source={{ uri }} style={styles.art} resizeMode="contain" />
-        <View style={[styles.ribbon, { backgroundColor: set.ribbon }]}>
-          <Text style={styles.ribbonText}>{set.code}</Text>
-        </View>
-      </LinearGradient>
+      <View style={[styles.stage, { pointerEvents: 'none' }]}>
+        <PackCanvas textureUrl={textureUrl} accent={set.packTo} autoRotate={hero} />
+      </View>
+      <View style={[styles.ribbon, { backgroundColor: set.ribbon }]}>
+        <Text style={styles.ribbonText}>{set.code}</Text>
+      </View>
     </View>
   );
 
@@ -40,25 +40,16 @@ export function BoosterPack({ set, size = 'shop', disabled, onPress }: Props) {
 const styles = StyleSheet.create({
   shadow: {
     borderRadius: 16,
-    shadowColor: '#000',
-    shadowOpacity: 0.45,
-    shadowRadius: 18,
-    shadowOffset: { width: 0, height: 10 },
-    elevation: 12,
-    backgroundColor: '#120c08',
+    backgroundColor: 'transparent',
   },
-  pack: {
-    flex: 1,
-    borderRadius: 16,
-    overflow: 'hidden',
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.12)',
+  stage: {
+    ...StyleSheet.absoluteFill,
   },
-  art: { ...StyleSheet.absoluteFill, backgroundColor: '#efe6d2' },
   ribbon: {
     position: 'absolute',
     left: 8,
     top: 8,
+    zIndex: 2,
     paddingHorizontal: 8,
     paddingVertical: 3,
     borderRadius: 4,

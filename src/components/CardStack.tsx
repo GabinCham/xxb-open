@@ -1,4 +1,5 @@
 import * as Haptics from 'expo-haptics';
+import { useCallback, useEffect, useState } from 'react';
 import { Platform, StyleSheet, Text, Pressable, View } from 'react-native';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import Animated, {
@@ -10,8 +11,10 @@ import Animated, {
   withTiming,
 } from 'react-native-reanimated';
 
+import { isHitCard } from '../data/hits';
 import type { PulledCard } from '../data/types';
 import { colors } from '../theme';
+import { HitCardCanvas } from './pack3d/HitCardCanvas';
 import { TradingCard } from './TradingCard';
 
 type Props = {
@@ -37,9 +40,28 @@ function StackCard({
 }) {
   const x = useSharedValue(0);
   const y = useSharedValue(0);
+  const lift = useSharedValue(0);
+  const [artReady, setArtReady] = useState(!card.imageUrl);
+  const [inspect, setInspect] = useState(false);
+  const hit = isHitCard(card);
+  const markReady = useCallback(() => setArtReady(true), []);
+
+  useEffect(() => {
+    if (!active || !hit || !artReady) {
+      setInspect(false);
+      lift.value = 0;
+      return;
+    }
+    const timer = setTimeout(() => {
+      setInspect(true);
+      lift.value = withTiming(1, { duration: 560 });
+      buzz();
+    }, 420);
+    return () => clearTimeout(timer);
+  }, [active, artReady, hit, lift]);
 
   const pan = Gesture.Pan()
-    .enabled(active)
+    .enabled(active && !inspect)
     .onUpdate((event) => {
       x.value = event.translationX;
       y.value = event.translationY;
@@ -74,10 +96,25 @@ function StackCard({
     zIndex: 40 - index,
   }));
 
+  const photoStyle = useAnimatedStyle(() => ({
+    opacity: 1 - lift.value,
+  }));
+
+  const modelStyle = useAnimatedStyle(() => ({
+    opacity: lift.value,
+  }));
+
   return (
     <GestureDetector gesture={pan}>
       <Animated.View style={[styles.cardAbs, style]} pointerEvents={active ? 'auto' : 'none'}>
-        <TradingCard card={card} />
+        <Animated.View style={photoStyle} pointerEvents={inspect ? 'none' : 'auto'}>
+          <TradingCard card={card} onReady={markReady} />
+        </Animated.View>
+        {hit && active ? (
+          <Animated.View style={[styles.model, modelStyle]} pointerEvents={inspect ? 'auto' : 'none'}>
+            <HitCardCanvas frontUrl={card.imageUrl} />
+          </Animated.View>
+        ) : null}
       </Animated.View>
     </GestureDetector>
   );
@@ -85,6 +122,8 @@ function StackCard({
 
 export function CardStack({ cards, onDismissTop }: Props) {
   const visible = cards.slice(0, 4);
+  const top = cards[0];
+  const inspectingHit = Boolean(top && isHitCard(top));
 
   return (
     <View style={styles.wrap}>
@@ -98,9 +137,13 @@ export function CardStack({ cards, onDismissTop }: Props) {
           ))
           .reverse()}
       </View>
-      <Text style={styles.hint}>Glisse avec le doigt pour faire partir la carte</Text>
+      <Text style={styles.hint}>
+        {inspectingHit
+          ? 'Fais tourner la carte avec le doigt pour voir le reflet'
+          : 'Glisse avec le doigt pour faire partir la carte'}
+      </Text>
       <Pressable onPress={onDismissTop}>
-        <Text style={styles.alt}>Ou appuie ici pour envoyer la carte du dessus</Text>
+        <Text style={styles.alt}>{inspectingHit ? 'Continuer' : 'Ou appuie ici pour envoyer la carte du dessus'}</Text>
       </Pressable>
     </View>
   );
@@ -110,7 +153,13 @@ const styles = StyleSheet.create({
   wrap: { alignItems: 'center', gap: 18 },
   counter: { color: colors.gold, fontWeight: '800', letterSpacing: 1, textTransform: 'uppercase' },
   stack: { width: 250, height: 380 },
-  cardAbs: { position: 'absolute', left: 0, top: 0 },
+  cardAbs: { position: 'absolute', left: 0, top: 0, width: 250, height: 349, overflow: 'hidden' },
+  model: {
+    ...StyleSheet.absoluteFill,
+    width: 250,
+    height: 349,
+    overflow: 'hidden',
+  },
   hint: { color: colors.muted, fontSize: 14, textAlign: 'center', paddingHorizontal: 24 },
   alt: { color: colors.goldDim, fontSize: 13, textDecorationLine: 'underline' },
 });

@@ -72,7 +72,7 @@ const styles = StyleSheet.create({
   kicker: { color: colors.gold, letterSpacing: 3, fontWeight: '800' },
   title: { color: colors.white, fontSize: 28, fontWeight: '900', marginTop: 8, textAlign: 'center' },
   lead: { color: colors.muted, marginTop: 8, marginBottom: 28, textAlign: 'center' },
-  stage: { alignItems: 'center', justifyContent: 'center', minHeight: 360, minWidth: 260 },
+  stage: { alignItems: 'center', justifyContent: 'center', minHeight: 420, minWidth: 260 },
   flash: {
     position: 'absolute',
     width: 180,
