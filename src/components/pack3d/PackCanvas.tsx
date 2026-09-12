@@ -10,6 +10,7 @@ import {
   MeshStandardMaterial,
   Object3D,
   ClampToEdgeWrapping,
+  RepeatWrapping,
   SRGBColorSpace,
   Texture,
   TextureLoader,
@@ -21,7 +22,8 @@ import { Canvas, useFrame, useLoader, useThree } from './r3f';
 const packGltfModule = require('../../../assets/BoosterOP.glb');
 
 type PackCanvasProps = {
-  textureUrl: string;
+  textureModule?: number;
+  textureUrl?: string;
   accent: string;
   autoRotate?: boolean;
 };
@@ -69,8 +71,29 @@ function PackLights() {
   );
 }
 
-export function PackCanvas({ textureUrl, accent, autoRotate = false }: PackCanvasProps) {
+export function PackCanvas({ textureModule, textureUrl, accent, autoRotate = false }: PackCanvasProps) {
   const modelUri = useBoosterGltfUri();
+  const [packArtUri, setPackArtUri] = useState<string | null>(textureUrl ?? null);
+
+  useEffect(() => {
+    if (textureModule == null) {
+      setPackArtUri(textureUrl ?? null);
+      return;
+    }
+    let live = true;
+    Asset.fromModule(textureModule)
+      .downloadAsync()
+      .then((asset) => {
+        if (!live) return;
+        setPackArtUri(asset.localUri ?? asset.uri ?? textureUrl ?? null);
+      })
+      .catch(() => {
+        if (live) setPackArtUri(textureUrl ?? null);
+      });
+    return () => {
+      live = false;
+    };
+  }, [textureModule, textureUrl]);
 
   return (
     <Canvas
@@ -82,9 +105,9 @@ export function PackCanvas({ textureUrl, accent, autoRotate = false }: PackCanva
       onCreated={({ camera }) => camera.lookAt(0, 0, 0)}
     >
       <PackLights />
-      {modelUri ? (
+      {modelUri && packArtUri ? (
         <Suspense fallback={null}>
-          <PackModel uri={modelUri} textureUrl={textureUrl} accent={accent} autoRotate={autoRotate} />
+          <PackModel uri={modelUri} textureUrl={packArtUri} accent={accent} autoRotate={autoRotate} />
         </Suspense>
       ) : null}
     </Canvas>
@@ -132,10 +155,10 @@ function PackModel({
         }
         texture.colorSpace = SRGBColorSpace;
         texture.flipY = false;
-        texture.wrapS = ClampToEdgeWrapping;
+        texture.wrapS = RepeatWrapping;
         texture.wrapT = ClampToEdgeWrapping;
-        texture.repeat.set(0.9, 0.93);
-        texture.offset.set(0.05, 0.035);
+        texture.repeat.set(-0.9, 0.93);
+        texture.offset.set(0.95, 0.035);
         texture.anisotropy = 8;
         texture.needsUpdate = true;
         applied.current?.dispose();

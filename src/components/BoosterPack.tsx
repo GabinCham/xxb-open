@@ -1,6 +1,6 @@
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 
-import { officialPackTexture } from '../data/images';
+import { packTextureModule } from '../data/packTextures';
 import type { BoosterSet } from '../data/types';
 import { PackCanvas } from './pack3d/PackCanvas';
 
@@ -15,12 +15,12 @@ export function BoosterPack({ set, size = 'shop', disabled, onPress }: Props) {
   const hero = size === 'hero';
   const width = hero ? 220 : 132;
   const height = hero ? 340 : 204;
-  const textureUrl = officialPackTexture(set.folder, hero ? 1024 : 640, set.tcgProductId);
+  const textureModule = packTextureModule(set.id);
 
   const body = (
     <View style={[styles.shadow, disabled && styles.disabled, { width, height }]}>
       <View style={[styles.stage, { pointerEvents: 'none' }]}>
-        <PackCanvas textureUrl={textureUrl} accent={set.packTo} autoRotate={hero} />
+        <PackCanvas textureModule={textureModule} accent={set.packTo} autoRotate={hero} />
       </View>
       <View style={[styles.ribbon, { backgroundColor: set.ribbon }]}>
         <Text style={styles.ribbonText}>{set.code}</Text>

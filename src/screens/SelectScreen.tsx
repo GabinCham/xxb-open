@@ -2,12 +2,13 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 
 import { BoosterPack } from '../components/BoosterPack';
+import { TAB_BAR_HEIGHT } from '../components/TabBar';
 import { BOOSTER_SETS } from '../data/sets';
 import { useGame } from '../game/GameContext';
 import { colors } from '../theme';
 
 export function SelectScreen() {
-  const { remaining, selectSet, grantBooster, goLibrary, collection } = useGame();
+  const { remaining, selectSet, grantBooster } = useGame();
   const empty = remaining <= 0;
 
   return (
@@ -24,10 +25,6 @@ export function SelectScreen() {
         <View style={styles.badge}>
           <Text style={styles.badgeText}>{empty ? 'Plus de booster' : `${remaining} restant`}</Text>
         </View>
-
-        <Pressable style={styles.libraryBtn} onPress={goLibrary}>
-          <Text style={styles.libraryBtnText}>Bibliothèque · {collection.length}</Text>
-        </Pressable>
 
         <View style={styles.grid}>
           {BOOSTER_SETS.map((set) => (
@@ -54,7 +51,7 @@ export function SelectScreen() {
 
 const styles = StyleSheet.create({
   fill: { flex: 1 },
-  content: { paddingTop: 64, paddingBottom: 48, paddingHorizontal: 20, maxWidth: 720, width: '100%', alignSelf: 'center' },
+  content: { paddingTop: 64, paddingBottom: TAB_BAR_HEIGHT + 28, paddingHorizontal: 20, maxWidth: 720, width: '100%', alignSelf: 'center' },
   kicker: { color: colors.gold, letterSpacing: 3, fontWeight: '800', fontSize: 12 },
   title: { color: colors.white, fontSize: 34, fontWeight: '900', marginTop: 8 },
   lead: { color: colors.muted, fontSize: 16, lineHeight: 22, marginTop: 10, maxWidth: 420 },
@@ -69,17 +66,6 @@ const styles = StyleSheet.create({
     borderRadius: 999,
   },
   badgeText: { color: colors.gold, fontWeight: '700' },
-  libraryBtn: {
-    alignSelf: 'flex-start',
-    marginBottom: 22,
-    backgroundColor: '#1c1a14',
-    borderWidth: 1,
-    borderColor: colors.goldDim,
-    paddingHorizontal: 14,
-    paddingVertical: 8,
-    borderRadius: 999,
-  },
-  libraryBtnText: { color: colors.cream, fontWeight: '700' },
   grid: { flexDirection: 'row', flexWrap: 'wrap', gap: 16, justifyContent: 'center' },
   cell: { width: 148, alignItems: 'center', gap: 8 },
   setName: { color: colors.cream, fontWeight: '800' },

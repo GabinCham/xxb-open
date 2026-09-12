@@ -30,7 +30,23 @@
       [
         "expo-asset",
         {
-          "assets": ["./assets/BoosterOP.glb", "./assets/OP_CARD.glb", "./assets/OP_CARD_BACK.webp"]
+          "assets": [
+            "./assets/BoosterOP.glb",
+            "./assets/OP_CARD.glb",
+            "./assets/OP_CARD_BACK.webp",
+            "./assets/packs/op01.jpg",
+            "./assets/packs/op02.jpg",
+            "./assets/packs/op03.jpg",
+            "./assets/packs/op05.jpg",
+            "./assets/packs/op06.jpg",
+            "./assets/packs/op09.jpg",
+            "./assets/packs/eb01.jpg",
+            "./assets/packs/op13.jpg",
+            "./assets/packs/op14.jpg",
+            "./assets/packs/op15.jpg",
+            "./assets/packs/op16.jpg",
+            "./assets/packs/op17.jpg"
+          ]
         }
       ]
     ]
