@@ -32,3 +32,16 @@ export function officialPackTexture(setFolder: string, width = 1024, tcgProductI
 export function officialCardImage(source: string, width = 600): string {
   return proxiedImage(source, width);
 }
+
+export function catalogThumb(imageUrl: string, width = 160): string {
+  try {
+    const parsed = new URL(imageUrl);
+    if (parsed.hostname.includes('wsrv.nl')) {
+      parsed.searchParams.set('w', String(width));
+      return parsed.toString();
+    }
+  } catch {
+    /* keep original */
+  }
+  return proxiedImage(imageUrl, width);
+}

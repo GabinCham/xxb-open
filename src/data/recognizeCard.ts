@@ -4,6 +4,7 @@ import { findCardsByOcrName, findCardsByPrintedCode, printedCodeFromId, allPrint
 import { fetchPrintedCard, formatMoney, LANG_COPY, pickVariant, quoteForLang, type ScanLang } from './cardPrices';
 import { officialCardImage } from './images';
 import type { CardDef } from './types';
+import { ensureVisualIndex, fingerprintFromUri, matchVisual, visualIndexProgress } from './visualIndex';
 
 export type ScanResult = {
   code: string;
@@ -174,44 +175,88 @@ async function cropCardNumber(uri: string): Promise<string | null> {
 }
 
 export async function recognizeCard(uri: string, onStatus?: (msg: string) => void): Promise<ScanResult> {
-  onStatus?.('Lecture du texte…');
-  const tess = await ocrWorker();
-  const full = await tess.recognize(uri);
-  let text = full.data.text ?? '';
-  try {
-    const strip = await cropCardNumber(uri);
-    if (strip) {
-      const bottom = await tess.recognize(strip);
-      text = `${text}\n${bottom.data.text ?? ''}`;
+  onStatus?.('Analyse de l’illustration…');
+  const visualReady = visualIndexProgress().ready;
+  const visualJob = (async () => {
+    try {
+      await ensureVisualIndex(onStatus);
+      const print = await fingerprintFromUri(uri);
+      return matchVisual(print.hash, print.colors, 10);
+    } catch {
+      return [];
     }
-  } catch {
-    /* photo locale : le recadrage est optionnel */
-  }
-  const code = pickCode(text);
-  if (!code) {
-    throw new Error('Impossible de lire le code (ex. OP01-112). Recadre la carte, surtout le bas.');
+  })();
+  const ocrJob = (async () => {
+    try {
+      const tess = await ocrWorker();
+      const full = await tess.recognize(uri);
+      let text = full.data.text ?? '';
+      const strip = await cropCardNumber(uri);
+      if (strip) {
+        const bottom = await tess.recognize(strip);
+        text = `${text}\n${bottom.data.text ?? ''}`;
+      }
+      return text;
+    } catch {
+      return '';
+    }
+  })();
+
+  if (!visualReady) onStatus?.('Index visuel du catalogue…');
+  const [visual, text] = await Promise.all([visualJob, ocrJob]);
+  const ocrCode = text ? pickCode(text) : null;
+  const best = visual[0];
+  const ocrHits = ocrCode ? visual.filter((entry) => entry.code === ocrCode) : [];
+  let chosen =
+    ocrHits[0] && (ocrHits[0].distance < 0.42 || !best || ocrHits[0].distance <= (best.distance ?? 1) + 0.04)
+      ? ocrHits[0]
+      : best && best.distance < 0.38
+        ? best
+        : ocrHits[0] ?? (best && best.distance < 0.5 ? best : null);
+
+  if (!chosen?.code && ocrCode) {
+    const catalogHit = findCardsByPrintedCode(ocrCode)[0];
+    chosen = {
+      id: catalogHit?.id ?? ocrCode,
+      code: ocrCode,
+      name: catalogHit?.name ?? ocrCode,
+      hash: '',
+      colors: [],
+      imageUrl: catalogHit?.imageUrl,
+      finish: catalogHit?.finish,
+      variantLabel: catalogHit?.variantLabel,
+      distance: 1,
+    };
   }
 
-  onStatus?.(`Carte ${code}…`);
+  if (!chosen?.code) {
+    throw new Error('Carte non reconnue. Cadre-la entière, bien nette, dans le rectangle.');
+  }
+
+  onStatus?.(`Carte ${chosen.code}…`);
   const lang = detectLang(text);
-  const variants = await fetchPrintedCard(code);
-  const catalog = findCardsByPrintedCode(code);
-  const variant = pickVariant(variants);
+  const variants = await fetchPrintedCard(chosen.code);
+  const catalog = findCardsByPrintedCode(chosen.code);
+  const variant = pickVariant(variants, chosen.id);
   const usd = Number(variant.market_price ?? variant.inventory_price ?? 0);
   const quote = await quoteForLang(usd, lang);
   const matched =
-    catalog.find((card) => card.id.toUpperCase() === (variant.card_image_id ?? '').toUpperCase()) ?? catalog[0];
+    catalog.find((card) => card.id.toUpperCase() === chosen.id.toUpperCase()) ??
+    catalog.find((card) => card.id.toUpperCase() === (variant.card_image_id ?? '').toUpperCase()) ??
+    catalog[0];
 
   return {
-    code,
-    name: (matched?.name ?? variant.card_name).replace(/\s*\(\d+\)\s*/g, ' ').trim(),
+    code: chosen.code,
+    name: (matched?.name ?? chosen.name ?? variant.card_name).replace(/\s*\(\d+\)\s*/g, ' ').trim(),
     lang,
     langLabel: LANG_COPY[lang].label,
     priceLabel: formatMoney(quote.amount, quote.currency),
     market: quote.market,
     usd: quote.usd,
-    variant: /_p/i.test(variant.card_image_id ?? '') || /parallel/i.test(variant.card_name) ? 'Alternate Art' : 'Base',
-    imageUrl: variant.card_image ? officialCardImage(variant.card_image, 500) : matched?.imageUrl,
+    variant:
+      chosen.variantLabel ||
+      (/_p/i.test(variant.card_image_id ?? '') || /parallel/i.test(variant.card_name) ? 'Alternate Art' : 'Base'),
+    imageUrl: variant.card_image ? officialCardImage(variant.card_image, 500) : matched?.imageUrl ?? chosen.imageUrl,
     card: matched,
   };
 }

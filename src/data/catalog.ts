@@ -199,6 +199,20 @@ export function getCachedSetCards(setId: string): CardDef[] {
   return fallbackPool(setId);
 }
 
+export function allCatalogCards(): CardDef[] {
+  const seen = new Set<string>();
+  const list: CardDef[] = [];
+  for (const set of BOOSTER_SETS) {
+    if (set.guaranteedHit) continue;
+    for (const card of getCachedSetCards(set.id)) {
+      if (!card.imageUrl || seen.has(card.id)) continue;
+      seen.add(card.id);
+      list.push(card);
+    }
+  }
+  return list;
+}
+
 export async function loadCatalog(): Promise<void> {
   await Promise.all(
     BOOSTER_SETS.map(async (set) => {

@@ -5,15 +5,17 @@ import { useRef, useState } from 'react';
 import { ActivityIndicator, Image, Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { TAB_BAR_HEIGHT } from '../components/TabBar';
-import { applyScanLang, recognizeCard, type ScanResult } from '../data/recognizeCard';
 import type { ScanLang } from '../data/cardPrices';
+import { applyScanLang, recognizeCard, type ScanResult } from '../data/recognizeCard';
+import { applyScannerFocus, pulseAutofocus } from '../data/scannerFocus';
 import { colors } from '../theme';
 
 export function ScannerScreen() {
   const cameraRef = useRef<CameraView>(null);
   const [permission, requestPermission] = useCameraPermissions();
+  const [torch, setTorch] = useState(false);
   const [busy, setBusy] = useState(false);
-  const [status, setStatus] = useState('Cadre ta carte, surtout le code en bas');
+  const [status, setStatus] = useState('Cadre toute la carte · reconnaissance par illustration');
   const [preview, setPreview] = useState<string | null>(null);
   const [result, setResult] = useState<ScanResult | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -37,7 +39,12 @@ export function ScannerScreen() {
 
   const shoot = async () => {
     if (busy) return;
-    const photo = await cameraRef.current?.takePictureAsync({ quality: 0.8, base64: true });
+    const photo = await cameraRef.current?.takePictureAsync({
+      quality: 1,
+      base64: true,
+      imageType: 'jpg',
+      scale: 1,
+    });
     if (!photo) return;
     const uri =
       photo.uri?.startsWith('data:') || photo.uri?.startsWith('http') || photo.uri?.startsWith('file')
@@ -64,7 +71,7 @@ export function ScannerScreen() {
     setResult(null);
     setError(null);
     setPreview(null);
-    setStatus('Cadre ta carte, surtout le code en bas');
+    setStatus('Cadre toute la carte · reconnaissance par illustration');
   };
 
   return (
@@ -109,10 +116,34 @@ export function ScannerScreen() {
             {error ? <Text style={styles.err}>{error}</Text> : null}
           </View>
         ) : permission?.granted ? (
-          <View style={styles.viewfinder}>
-            <CameraView ref={cameraRef} style={styles.camera} facing="back" />
+          <Pressable
+            nativeID="scanner-viewfinder"
+            style={styles.viewfinder}
+            onPress={() => {
+              const node = typeof document !== 'undefined' ? document.getElementById('scanner-viewfinder') : null;
+              void pulseAutofocus(node);
+            }}
+          >
+            <CameraView
+              ref={cameraRef}
+              style={styles.camera}
+              facing="back"
+              autofocus="on"
+              enableTorch={torch}
+              onCameraReady={() => {
+                const run = (tries: number) => {
+                  const node = typeof document !== 'undefined' ? document.getElementById('scanner-viewfinder') : null;
+                  if (node?.querySelector('video')) {
+                    void applyScannerFocus(node);
+                    return;
+                  }
+                  if (tries > 0) setTimeout(() => run(tries - 1), 200);
+                };
+                setTimeout(() => run(8), 80);
+              }}
+            />
             <View pointerEvents="none" style={styles.guide} />
-          </View>
+          </Pressable>
         ) : (
           <View style={styles.need}>
             <Text style={styles.needText}>Autorise la caméra pour viser tes cartes, ou importe une photo.</Text>
@@ -129,9 +160,14 @@ export function ScannerScreen() {
             <Pressable style={[styles.shutter, busy && styles.disabled]} onPress={shoot} disabled={busy || !permission?.granted}>
               <Text style={styles.shutterText}>{busy ? 'Analyse…' : 'Photographier'}</Text>
             </Pressable>
-            <Pressable style={styles.ghost} onPress={error ? reset : fromLibrary} disabled={busy}>
-              <Text style={styles.ghostText}>{error ? 'Réessayer' : 'Galerie'}</Text>
-            </Pressable>
+            <View style={styles.row}>
+              <Pressable style={styles.ghost} onPress={error ? reset : fromLibrary} disabled={busy}>
+                <Text style={styles.ghostText}>{error ? 'Réessayer' : 'Galerie'}</Text>
+              </Pressable>
+              <Pressable style={styles.ghost} onPress={() => setTorch((on) => !on)} disabled={busy || !permission?.granted}>
+                <Text style={styles.ghostText}>{torch ? 'Lampe off' : 'Lampe'}</Text>
+              </Pressable>
+            </View>
           </>
         )}
       </View>
@@ -250,7 +286,9 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   shutterText: { color: '#1a1408', fontWeight: '900', fontSize: 16 },
-  ghost: { alignItems: 'center', paddingVertical: 8 },
+  ghost: { alignItems: 'center', paddingVertical: 8, flex: 1 },
+  ghostText: { color: colors.gold, fontWeight: '700' },
+  row: { flexDirection: 'row', justifyContent: 'space-around' },
   ghostText: { color: colors.gold, fontWeight: '700' },
   disabled: { opacity: 0.5 },
 });
