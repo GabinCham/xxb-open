@@ -137,6 +137,58 @@ function fallbackPool(setId: string): CardDef[] {
   return CARD_POOL.filter((card) => card.setId === setId);
 }
 
+export function printedCodeFromId(id: string): string | null {
+  const match = id.toUpperCase().match(/^((?:OP|EB|ST|PRB)\d{2}-\d{3}|P-\d{3})/);
+  return match?.[1] ?? null;
+}
+
+export function allPrintedCodes(): string[] {
+  const codes = new Set<string>();
+  for (const set of BOOSTER_SETS) {
+    if (set.guaranteedHit) continue;
+    for (const card of getCachedSetCards(set.id)) {
+      const code = printedCodeFromId(card.id);
+      if (code) codes.add(code);
+    }
+  }
+  return [...codes];
+}
+
+export function findCardsByOcrName(ocr: string): CardDef[] {
+  const hay = ocr.toLowerCase().replace(/[^a-z0-9]+/g, ' ');
+  const found: CardDef[] = [];
+  const seen = new Set<string>();
+  for (const set of BOOSTER_SETS) {
+    if (set.guaranteedHit) continue;
+    for (const card of getCachedSetCards(set.id)) {
+      const name = card.name.toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+      if (name.length < 5 || !hay.includes(name) || seen.has(card.id)) continue;
+      seen.add(card.id);
+      found.push(card);
+    }
+  }
+  return found.sort((a, b) => b.name.length - a.name.length);
+}
+
+export function findCardsByPrintedCode(code: string): CardDef[] {
+  const needle = code.toUpperCase();
+  const found: CardDef[] = [];
+  const seen = new Set<string>();
+  for (const set of BOOSTER_SETS) {
+    if (set.guaranteedHit) continue;
+    for (const card of getCachedSetCards(set.id)) {
+      const id = card.id.toUpperCase();
+      if (id === needle || id.startsWith(`${needle}_`) || id.startsWith(`${needle}-`)) {
+        if (!seen.has(card.id)) {
+          seen.add(card.id);
+          found.push(card);
+        }
+      }
+    }
+  }
+  return found;
+}
+
 export function getCachedSetCards(setId: string): CardDef[] {
   if (cache[setId]?.length) return cache[setId];
   const set = BOOSTER_SETS.find((item) => item.id === setId);

@@ -4,7 +4,6 @@ import { Pressable, StyleSheet, Text, View, useWindowDimensions } from 'react-na
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import Animated, {
   Easing,
-  interpolate,
   runOnJS,
   type SharedValue,
   useAnimatedStyle,
@@ -19,6 +18,14 @@ import { useGame } from '../game/GameContext';
 import { colors } from '../theme';
 
 const SLOTS = 4;
+const CARD_W = 108;
+const CARD_H = 151;
+const GAP = 10;
+const PAD = 12;
+const PAGE_W = CARD_W * 2 + GAP + PAD * 2;
+const PAGE_H = CARD_H * 2 + GAP + PAD * 2;
+const SPINE = 26;
+const PEEK = 56;
 
 function pagesFromSlots(slots: (string | null)[], collection: OwnedCard[]) {
   const byId = new Map(collection.map((card) => [card.id, card]));
@@ -43,76 +50,108 @@ function PageFace({
   pageIndex,
   onPick,
 }: {
-  page: (OwnedCard | undefined)[];
+  page?: (OwnedCard | undefined)[];
   pageIndex: number;
   onPick: (slot: number) => void;
 }) {
+  const slots = page ?? [undefined, undefined, undefined, undefined];
   return (
-    <View style={styles.pockets}>
+    <View style={styles.pageFace}>
       <View style={styles.row}>
-        <Pocket card={page[0]} onPress={() => onPick(pageIndex * SLOTS)} />
-        <Pocket card={page[1]} onPress={() => onPick(pageIndex * SLOTS + 1)} />
+        <Pocket card={slots[0]} onPress={() => onPick(pageIndex * SLOTS)} />
+        <Pocket card={slots[1]} onPress={() => onPick(pageIndex * SLOTS + 1)} />
       </View>
       <View style={styles.row}>
-        <Pocket card={page[2]} onPress={() => onPick(pageIndex * SLOTS + 2)} />
-        <Pocket card={page[3]} onPress={() => onPick(pageIndex * SLOTS + 3)} />
+        <Pocket card={slots[2]} onPress={() => onPick(pageIndex * SLOTS + 2)} />
+        <Pocket card={slots[3]} onPress={() => onPick(pageIndex * SLOTS + 3)} />
       </View>
     </View>
   );
 }
 
-function FlippingPage({
-  i,
-  current,
-  turn,
+function ScaledPage({
+  scale,
   children,
 }: {
-  i: number;
-  current: SharedValue<number>;
+  scale: number;
+  children: ReactNode;
+}) {
+  return (
+    <View style={{ width: PAGE_W * scale, height: PAGE_H * scale, overflow: 'hidden' }}>
+      <View
+        style={{
+          width: PAGE_W,
+          height: PAGE_H,
+          transform: [{ scale }],
+          transformOrigin: '0px 0px',
+        }}
+      >
+        {children}
+      </View>
+    </View>
+  );
+}
+
+function TurningLeaf({
+  turn,
+  mode,
+  children,
+}: {
   turn: SharedValue<number>;
+  mode: SharedValue<number>;
   children: ReactNode;
 }) {
   const style = useAnimatedStyle(() => {
-    let deg = 0;
-    if (i < current.value) deg = -180;
-    else if (i === current.value) deg = turn.value;
-    const lifting = i === current.value && Math.abs(turn.value) > 2;
+    const flipping = mode.value === 1;
+    const angle = flipping ? turn.value : 0;
     return {
-      zIndex: i === current.value ? 40 : i < current.value ? 8 + i : 20 - i,
-      transform: [{ perspective: 1800 }, { rotateY: `${deg}deg` }],
-      boxShadow: lifting ? '12px 8px 28px rgba(0,0,0,0.45)' : '0px 2px 8px rgba(0,0,0,0.2)',
+      transform: [{ perspective: 1600 }, { rotateY: `${angle}deg` }],
+      zIndex: mode.value === 2 ? 0 : 30,
+      opacity: mode.value === 2 ? 0 : 1,
+      boxShadow: Math.abs(angle) > 2 ? '10px 6px 24px rgba(0,0,0,0.4)' : 'none',
     };
   });
-
-  return (
-    <Animated.View pointerEvents="box-none" style={[styles.pageLeaf, style]}>
-      <View style={styles.pageFront}>{children}</View>
-    </Animated.View>
-  );
+  return <Animated.View style={[styles.turnLeaf, style]}>{children}</Animated.View>;
 }
 
 export function BinderScreen() {
   const { collection, binderSlots, pickBinderSlot } = useGame();
   const pages = pagesFromSlots(binderSlots, collection);
-  const { width } = useWindowDimensions();
-  const stageW = Math.min(width - 16, 720);
-  const leafW = Math.min(280, Math.floor(stageW * 0.48));
+  const { width, height } = useWindowDimensions();
   const [index, setIndex] = useState(0);
   const current = useSharedValue(0);
   const turn = useSharedValue(0);
   const busy = useSharedValue(0);
   const mode = useSharedValue(0);
-  const last = useSharedValue(Math.max(0, pages.length - 1));
-  const placed = binderSlots.filter(Boolean).length;
+  const lastLeft = useSharedValue(Math.max(0, pages.length - 1));
+
+  const availW = width - 28;
+  const availH = height - 210 - TAB_BAR_HEIGHT;
+  const spreadW = PAGE_W * 2 + SPINE;
+  const scale = Math.min(1, availW / spreadW, availH / PAGE_H);
+  const leafW = PAGE_W * scale;
+  const leafH = PAGE_H * scale;
+  const spineW = SPINE * scale;
+  const leftover = availW - (leafW * 2 + spineW);
+  const peekW = Math.min(PEEK * scale, Math.max(0, leftover - 12));
 
   useEffect(() => {
-    last.value = Math.max(0, pages.length - 1);
-  }, [last, pages.length]);
+    const max = Math.max(0, pages.length - 1);
+    lastLeft.value = max;
+    if (index > max) {
+      setIndex(max);
+      current.value = max;
+    }
+  }, [current, index, lastLeft, pages.length]);
+
+  const leftPage = pages[index];
+  const rightPage = pages[index + 1];
+  const peekPage = peekW >= 28 ? pages[index + 2] : undefined;
 
   const syncIndex = (next: number) => setIndex(next);
 
   const pan = Gesture.Pan()
-    .activeOffsetX([-20, 20])
+    .activeOffsetX([-18, 18])
     .onStart(() => {
       if (!busy.value) mode.value = 0;
     })
@@ -120,18 +159,14 @@ export function BinderScreen() {
       if (busy.value) return;
       const tx = event.translationX;
       if (mode.value === 0) {
-        if (tx < -12 && current.value < last.value) mode.value = 1;
-        else if (tx > 12 && current.value > 0) {
-          mode.value = 2;
-          current.value -= 1;
-          turn.value = -180;
-        }
+        if (tx < -12 && current.value < lastLeft.value) mode.value = 1;
+        else if (tx > 12 && current.value > 0) mode.value = 2;
       }
       if (mode.value === 1) {
         turn.value = Math.max(-180, Math.min(0, (tx / leafW) * 180));
       }
       if (mode.value === 2) {
-        turn.value = Math.min(0, -180 + (tx / leafW) * 180);
+        turn.value = Math.min(180, Math.max(0, (tx / leafW) * 180));
       }
     })
     .onEnd(() => {
@@ -139,7 +174,7 @@ export function BinderScreen() {
       if (mode.value === 1) {
         if (turn.value < -86) {
           busy.value = 1;
-          turn.value = withTiming(-180, { duration: 300, easing: Easing.inOut(Easing.cubic) }, (finished) => {
+          turn.value = withTiming(-180, { duration: 320, easing: Easing.inOut(Easing.cubic) }, (finished) => {
             if (!finished) return;
             current.value += 1;
             turn.value = 0;
@@ -154,32 +189,29 @@ export function BinderScreen() {
         return;
       }
       if (mode.value === 2) {
-        if (turn.value > -94) {
+        if (turn.value > 86) {
           busy.value = 1;
-          turn.value = withTiming(0, { duration: 300, easing: Easing.inOut(Easing.cubic) }, (finished) => {
+          turn.value = withTiming(180, { duration: 320, easing: Easing.inOut(Easing.cubic) }, (finished) => {
             if (!finished) return;
-            mode.value = 0;
-            busy.value = 0;
-            runOnJS(syncIndex)(current.value);
-          });
-        } else {
-          busy.value = 1;
-          turn.value = withTiming(-180, { duration: 220, easing: Easing.inOut(Easing.cubic) }, (finished) => {
-            if (!finished) return;
-            current.value += 1;
+            current.value -= 1;
             turn.value = 0;
             mode.value = 0;
             busy.value = 0;
             runOnJS(syncIndex)(current.value);
           });
+        } else {
+          turn.value = withTiming(0, { duration: 220 });
+          mode.value = 0;
         }
         return;
       }
       turn.value = withTiming(0, { duration: 200 });
     });
 
-  const coverStyle = useAnimatedStyle(() => ({
-    transform: [{ perspective: 1400 }, { rotateY: `${interpolate(current.value, [0, 1], [-8, -18])}deg` }],
+  const backTurnStyle = useAnimatedStyle(() => ({
+    transform: [{ perspective: 1600 }, { rotateY: `${-180 + turn.value}deg` }],
+    zIndex: mode.value === 2 ? 32 : 0,
+    opacity: mode.value === 2 ? 1 : 0,
   }));
 
   return (
@@ -188,32 +220,63 @@ export function BinderScreen() {
         <Text style={styles.kicker}>ALBUM</Text>
         <Text style={styles.title}>Classeur</Text>
         <Text style={styles.lead}>
-          Page {index + 1} / {pages.length}
-          {placed ? ' · tire la page vers la gauche pour tourner' : ' · appuie sur une case pour y placer une carte'}
+          Pages {index + 1}
+          {rightPage ? `–${index + 2}` : ''} / {pages.length} · tire la page de droite vers la gauche
         </Text>
       </View>
 
       <GestureDetector gesture={pan}>
         <View style={styles.stage}>
-          <View style={[styles.binder, { width: Math.min(stageW, leafW * 2 + 28) }]}>
-            <Animated.View style={[styles.leftCover, { width: leafW }, coverStyle]}>
-              <View style={styles.leftPaper} />
-              <View style={[styles.leftPaper, styles.leftPaper2]} />
-            </Animated.View>
+          <View
+            style={[
+              styles.binder,
+              {
+                width: leafW * 2 + spineW + (peekPage ? peekW + 4 : 0) + 16,
+                height: leafH + 20,
+              },
+            ]}
+          >
+            <View style={[styles.leafShell, { width: leafW, height: leafH }]}>
+              <ScaledPage scale={scale}>
+                <PageFace page={leftPage} pageIndex={index} onPick={pickBinderSlot} />
+              </ScaledPage>
+            </View>
 
-            <View style={styles.spine}>
+            <View style={[styles.spine, { width: spineW }]}>
               {[0, 1, 2, 3].map((ring) => (
                 <View key={ring} style={styles.ring} />
               ))}
             </View>
 
-            <View style={[styles.rightWell, { width: leafW }]}>
-              {pages.map((page, i) => (
-                <FlippingPage key={i} i={i} current={current} turn={turn}>
-                  <PageFace page={page} pageIndex={i} onPick={pickBinderSlot} />
-                </FlippingPage>
-              ))}
+            <View style={[styles.rightStack, { width: leafW, height: leafH }]}>
+              <View pointerEvents="none" style={[styles.leafShell, { width: leafW, height: leafH }]}>
+                <ScaledPage scale={scale}>
+                  <PageFace page={pages[index + 2]} pageIndex={index + 2} onPick={pickBinderSlot} />
+                </ScaledPage>
+              </View>
+
+              <TurningLeaf turn={turn} mode={mode}>
+                <View style={[styles.leafShell, { width: leafW, height: leafH }]}>
+                  <ScaledPage scale={scale}>
+                    <PageFace page={rightPage} pageIndex={index + 1} onPick={pickBinderSlot} />
+                  </ScaledPage>
+                </View>
+              </TurningLeaf>
+
+              <Animated.View pointerEvents="none" style={[styles.turnLeaf, backTurnStyle]}>
+                <ScaledPage scale={scale}>
+                  <PageFace page={leftPage} pageIndex={index} onPick={pickBinderSlot} />
+                </ScaledPage>
+              </Animated.View>
             </View>
+
+            {peekPage ? (
+              <View style={[styles.peek, { width: peekW, height: leafH }]}>
+                <ScaledPage scale={scale}>
+                  <PageFace page={peekPage} pageIndex={index + 2} onPick={pickBinderSlot} />
+                </ScaledPage>
+              </View>
+            ) : null}
           </View>
         </View>
       </GestureDetector>
@@ -224,9 +287,9 @@ export function BinderScreen() {
 const styles = StyleSheet.create({
   fill: { flex: 1 },
   header: {
-    paddingTop: 56,
+    paddingTop: 52,
     paddingHorizontal: 20,
-    maxWidth: 760,
+    maxWidth: 900,
     width: '100%',
     alignSelf: 'center',
   },
@@ -238,76 +301,67 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     marginBottom: TAB_BAR_HEIGHT,
-    paddingHorizontal: 8,
   },
   binder: {
     flexDirection: 'row',
-    alignItems: 'stretch',
-    height: 420,
+    alignItems: 'center',
     backgroundColor: '#2a1a12',
     borderRadius: 10,
     borderWidth: 1,
     borderColor: '#5a3a22',
-    overflow: 'hidden',
     padding: 8,
+    overflow: 'visible',
   },
-  leftCover: {
+  leafShell: {
+    overflow: 'visible',
+    backgroundColor: '#efe4d2',
     borderRadius: 4,
-    backgroundColor: '#3a2418',
-    justifyContent: 'center',
-    transformOrigin: 'right center',
+    borderWidth: 1,
+    borderColor: '#cbb89a',
   },
-  leftPaper: {
+  rightStack: { position: 'relative' },
+  turnLeaf: {
     position: 'absolute',
-    right: 6,
-    top: 14,
-    bottom: 14,
-    left: 18,
-    backgroundColor: '#d8cbb8',
-    borderRadius: 2,
+    top: 0,
+    left: 0,
+    transformOrigin: 'left center',
+    backfaceVisibility: 'hidden',
   },
-  leftPaper2: { right: 10, top: 18, bottom: 18, opacity: 0.7 },
+  peek: {
+    overflow: 'hidden',
+    marginLeft: 4,
+    borderRadius: 4,
+    borderWidth: 1,
+    borderColor: '#cbb89a',
+    backgroundColor: '#efe4d2',
+    opacity: 0.92,
+    pointerEvents: 'none',
+  },
   spine: {
-    width: 22,
+    height: '100%',
     justifyContent: 'space-evenly',
     alignItems: 'center',
-    paddingVertical: 28,
+    paddingVertical: 20,
   },
   ring: {
-    width: 16,
-    height: 16,
+    width: 15,
+    height: 15,
     borderRadius: 8,
     borderWidth: 3,
     borderColor: '#c0c4cc',
     backgroundColor: '#6a7080',
   },
-  rightWell: {
-    position: 'relative',
-  },
-  pageLeaf: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-    transformOrigin: 'left center',
-    backfaceVisibility: 'hidden',
-  },
-  pageFront: {
-    flex: 1,
+  pageFace: {
+    width: PAGE_W,
+    height: PAGE_H,
+    padding: PAD,
+    gap: GAP,
     backgroundColor: '#efe4d2',
-    borderRadius: 4,
-    borderWidth: 1,
-    borderColor: '#cbb89a',
-    justifyContent: 'center',
-    alignItems: 'center',
-    padding: 10,
   },
-  pockets: { gap: 10 },
-  row: { flexDirection: 'row', gap: 10 },
+  row: { flexDirection: 'row', gap: GAP },
   pocket: {
-    width: 108,
-    height: 151,
+    width: CARD_W,
+    height: CARD_H,
     borderRadius: 6,
     borderWidth: 1,
     borderColor: '#c4b49a',

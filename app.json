@@ -28,6 +28,20 @@
     "plugins": [
       "expo-font",
       [
+        "expo-camera",
+        {
+          "cameraPermission": "Pour photographier tes cartes One Piece et les reconnaître."
+        }
+      ],
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "Pour importer une photo de carte à identifier.",
+          "cameraPermission": "Pour photographier tes cartes One Piece et les reconnaître.",
+          "microphonePermission": false
+        }
+      ],
+      [
         "expo-asset",
         {
           "assets": [

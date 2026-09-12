@@ -5,6 +5,7 @@ import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { TabBar } from './src/components/TabBar';
 import { GameProvider, useGame } from './src/game/GameContext';
 import { BinderScreen } from './src/screens/BinderScreen';
+import { ScannerScreen } from './src/screens/ScannerScreen';
 import { InspectScreen } from './src/screens/InspectScreen';
 import { LibraryScreen } from './src/screens/LibraryScreen';
 import { RevealScreen } from './src/screens/RevealScreen';
@@ -37,6 +38,7 @@ function Root() {
       ) : (
         <>
           <View style={styles.page}>
+            {tab === 'scanner' ? <ScannerScreen /> : null}
             {tab === 'tracker' ? <TrackerScreen /> : null}
             {tab === 'boosters' ? <SelectScreen /> : null}
             {tab === 'library' ? <LibraryScreen /> : null}

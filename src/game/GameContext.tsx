@@ -24,7 +24,7 @@ function withTrailingPage(slots: (string | null)[]): (string | null)[] {
   return next.length ? next : emptyPage();
 }
 
-export type TabId = 'tracker' | 'boosters' | 'library' | 'binder';
+export type TabId = 'scanner' | 'tracker' | 'boosters' | 'library' | 'binder';
 export type Phase = 'select' | 'inspect' | 'reveal' | 'summary';
 
 type GameContextValue = {
