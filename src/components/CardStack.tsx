@@ -11,6 +11,7 @@ import Animated, {
   withTiming,
 } from 'react-native-reanimated';
 
+import { CARD_PIXEL_H, CARD_PIXEL_W, HIT_CANVAS_H, HIT_CANVAS_W } from '../data/cardSize';
 import { isHitCard } from '../data/hits';
 import type { PulledCard } from '../data/types';
 import { colors } from '../theme';
@@ -152,13 +153,14 @@ export function CardStack({ cards, onDismissTop }: Props) {
 const styles = StyleSheet.create({
   wrap: { alignItems: 'center', gap: 18 },
   counter: { color: colors.gold, fontWeight: '800', letterSpacing: 1, textTransform: 'uppercase' },
-  stack: { width: 250, height: 380 },
-  cardAbs: { position: 'absolute', left: 0, top: 0, width: 250, height: 349, overflow: 'hidden' },
+  stack: { width: CARD_PIXEL_W, height: CARD_PIXEL_H + 31, overflow: 'visible' },
+  cardAbs: { position: 'absolute', left: 0, top: 0, width: CARD_PIXEL_W, height: CARD_PIXEL_H, overflow: 'visible' },
   model: {
-    ...StyleSheet.absoluteFill,
-    width: 250,
-    height: 349,
-    overflow: 'hidden',
+    position: 'absolute',
+    width: HIT_CANVAS_W,
+    height: HIT_CANVAS_H,
+    left: (CARD_PIXEL_W - HIT_CANVAS_W) / 2,
+    top: (CARD_PIXEL_H - HIT_CANVAS_H) / 2,
   },
   hint: { color: colors.muted, fontSize: 14, textAlign: 'center', paddingHorizontal: 24 },
   alt: { color: colors.goldDim, fontSize: 13, textDecorationLine: 'underline' },

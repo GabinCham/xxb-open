@@ -121,8 +121,20 @@ async function fetchSetCards(set: { id: string; code: string; catalogCode?: stri
     if (card && !unique.has(card.id)) unique.set(card.id, card);
   }
   const list = [...unique.values()];
-  cache[set.id] = list.length ? list : CARD_POOL.filter((card) => card.setId === 'op13' || card.setId === set.id);
+  cache[set.id] = list.length ? list : fallbackPool(set.id);
   return cache[set.id];
+}
+
+function fallbackPool(setId: string): CardDef[] {
+  const set = BOOSTER_SETS.find((item) => item.id === setId);
+  if (set?.catalogCode) {
+    const source = BOOSTER_SETS.find((item) => item.code === set.catalogCode);
+    if (source) {
+      const fromSource = CARD_POOL.filter((card) => card.setId === source.id);
+      if (fromSource.length) return fromSource;
+    }
+  }
+  return CARD_POOL.filter((card) => card.setId === setId);
 }
 
 export function getCachedSetCards(setId: string): CardDef[] {
@@ -132,7 +144,7 @@ export function getCachedSetCards(setId: string): CardDef[] {
     const source = BOOSTER_SETS.find((item) => item.code === set.catalogCode);
     if (source && cache[source.id]?.length) return cache[source.id];
   }
-  return CARD_POOL.filter((card) => card.setId === setId || (setId === 'op13-hits' && card.setId === 'op13'));
+  return fallbackPool(setId);
 }
 
 export async function loadCatalog(): Promise<void> {
@@ -141,9 +153,7 @@ export async function loadCatalog(): Promise<void> {
       try {
         await fetchSetCards(set);
       } catch {
-        cache[set.id] = CARD_POOL.filter(
-          (card) => card.setId === set.id || (set.catalogCode === 'OP-13' && card.setId === 'op13'),
-        );
+        cache[set.id] = fallbackPool(set.id);
       }
     }),
   );

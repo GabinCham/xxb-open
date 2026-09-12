@@ -1,5 +1,5 @@
 import { Asset } from 'expo-asset';
-import { Suspense, useEffect, useMemo, useRef, useState, type MutableRefObject } from 'react';
+import { Suspense, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { StyleSheet, View } from 'react-native';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import { runOnJS } from 'react-native-reanimated';
@@ -11,19 +11,54 @@ import {
   Mesh,
   MeshPhysicalMaterial,
   Object3D,
+  OrthographicCamera,
   SRGBColorSpace,
   Texture,
   TextureLoader,
 } from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 
-import { Canvas, useFrame, useLoader } from './r3f';
+import { HIT_CANVAS_H, HIT_CANVAS_W, HIT_FRUSTUM_H, HIT_FRUSTUM_W } from '../../data/cardSize';
+import { Canvas, useFrame, useLoader, useThree } from './r3f';
 
 const cardGltfModule = require('../../../assets/OP_CARD.glb');
 const cardBackModule = require('../../../assets/OP_CARD_BACK.webp');
 
-const CARD_W = 250;
-const CARD_H = 349;
+const PITCH_MAX = 0.48;
+const YAW_SENS = 0.0058;
+const PITCH_SENS = 0.0042;
+
+type SpinApi = {
+  yaw: number;
+  pitch: number;
+  start: () => void;
+  drag: (dx: number, dy: number) => void;
+  end: () => void;
+  tick: (dt: number) => void;
+};
+
+function createSpinApi(): SpinApi {
+  let dragging = false;
+  const api: SpinApi = {
+    yaw: 0,
+    pitch: 0,
+    start() {
+      dragging = true;
+    },
+    drag(dx: number, dy: number) {
+      api.yaw -= dx * YAW_SENS;
+      api.pitch = Math.max(-PITCH_MAX, Math.min(PITCH_MAX, api.pitch - dy * PITCH_SENS));
+    },
+    end() {
+      dragging = false;
+    },
+    tick(dt: number) {
+      if (dragging) return;
+      api.pitch += (0 - api.pitch) * (1 - Math.exp(-6 * dt));
+    },
+  };
+  return api;
+}
 
 type Props = {
   frontUrl?: string;
@@ -67,7 +102,7 @@ async function uriFromModule(moduleId: number): Promise<string | null> {
 export function HitCardCanvas({ frontUrl }: Props) {
   const [modelUri, setModelUri] = useState<string | null>(null);
   const [backUri, setBackUri] = useState<string | null>(null);
-  const spin = useRef({ x: 0, y: 0 });
+  const spinApi = useRef(createSpinApi()).current;
   const lastPan = useRef({ x: 0, y: 0 });
 
   useEffect(() => {
@@ -82,23 +117,30 @@ export function HitCardCanvas({ frontUrl }: Props) {
     };
   }, []);
 
-  const resetPan = () => {
+  const startPan = () => {
     lastPan.current = { x: 0, y: 0 };
+    spinApi.start();
   };
 
   const followPan = (tx: number, ty: number) => {
-    spin.current.y += (tx - lastPan.current.x) * 0.0085;
-    spin.current.x = Math.max(-0.7, Math.min(0.7, spin.current.x + (ty - lastPan.current.y) * 0.0075));
+    spinApi.drag(tx - lastPan.current.x, ty - lastPan.current.y);
     lastPan.current = { x: tx, y: ty };
   };
 
+  const endPan = () => {
+    spinApi.end();
+  };
+
   const pan = Gesture.Pan()
-    .minDistance(1)
+    .minDistance(0)
     .onStart(() => {
-      runOnJS(resetPan)();
+      runOnJS(startPan)();
     })
     .onUpdate((event) => {
       runOnJS(followPan)(event.translationX, event.translationY);
+    })
+    .onEnd(() => {
+      runOnJS(endPan)();
     });
 
   return (
@@ -107,16 +149,31 @@ export function HitCardCanvas({ frontUrl }: Props) {
         {modelUri ? (
           <Canvas
             style={styles.canvas}
+            orthographic
             frameloop="always"
             dpr={[1, 1.75]}
             gl={{ antialias: true, alpha: true, toneMapping: ACESFilmicToneMapping }}
-            camera={{ position: [0, 0, 2.85], fov: 21, near: 0.1, far: 30 }}
-            onCreated={({ camera }) => camera.lookAt(0, 0, 0)}
+            camera={{ position: [0, 0, 1], near: 0.01, far: 10, zoom: 1 }}
+            onCreated={({ camera, gl }) => {
+              gl.toneMappingExposure = 0.95;
+              const cam = camera as OrthographicCamera & { manual?: boolean };
+              cam.manual = true;
+              cam.left = -HIT_FRUSTUM_W / 2;
+              cam.right = HIT_FRUSTUM_W / 2;
+              cam.top = HIT_FRUSTUM_H / 2;
+              cam.bottom = -HIT_FRUSTUM_H / 2;
+              cam.updateProjectionMatrix();
+              cam.lookAt(0, 0, 0);
+            }}
           >
-            <ambientLight intensity={0.5} />
-            <directionalLight position={[-0.7, 0.55, 1.8]} intensity={0.4} color="#9bb7ff" />
+            <FitCardCamera />
+            <hemisphereLight args={['#e8eef5', '#2a221c', 0.55]} />
+            <ambientLight intensity={0.4} color="#f4eee6" />
+            <directionalLight position={[-0.45, 0.38, 0.75]} intensity={0.9} color="#fff2dc" />
+            <directionalLight position={[0.55, 0.12, 0.4]} intensity={0.28} color="#9bb4d0" />
+            <directionalLight position={[0.2, 0.4, -0.55]} intensity={0.22} color="#e8d2a8" />
             <Suspense fallback={null}>
-              <HitCardModel uri={modelUri} backUri={backUri} frontUrl={frontUrl} spin={spin} />
+              <HitCardModel uri={modelUri} backUri={backUri} frontUrl={frontUrl} spinApi={spinApi} />
             </Suspense>
           </Canvas>
         ) : null}
@@ -125,16 +182,36 @@ export function HitCardCanvas({ frontUrl }: Props) {
   );
 }
 
+function FitCardCamera() {
+  const { camera } = useThree();
+
+  useLayoutEffect(() => {
+    const cam = camera as OrthographicCamera & { manual?: boolean };
+    cam.manual = true;
+    cam.left = -HIT_FRUSTUM_W / 2;
+    cam.right = HIT_FRUSTUM_W / 2;
+    cam.top = HIT_FRUSTUM_H / 2;
+    cam.bottom = -HIT_FRUSTUM_H / 2;
+    cam.near = 0.01;
+    cam.far = 10;
+    cam.position.set(0, 0, 1);
+    cam.lookAt(0, 0, 0);
+    cam.updateProjectionMatrix();
+  }, [camera]);
+
+  return null;
+}
+
 function HitCardModel({
   uri,
   backUri,
   frontUrl,
-  spin,
+  spinApi,
 }: {
   uri: string;
   backUri: string | null;
   frontUrl?: string;
-  spin: MutableRefObject<{ x: number; y: number }>;
+  spinApi: SpinApi;
 }) {
   const gltf = useLoader(GLTFLoader, uri);
   const group = useRef<Object3D>(null);
@@ -151,10 +228,10 @@ function HitCardModel({
       const label = meshLabel(child);
       if (label.includes('FrontPrint')) {
         applyPlanarUVs(child, false, true);
-        child.material = printMaterial(0.22, 0.55);
+        child.material = printMaterial();
       } else if (label.includes('BackPrint')) {
         applyPlanarUVs(child, true, true);
-        child.material = printMaterial(0.18, 0.48);
+        child.material = printMaterial();
       }
     });
     return root;
@@ -210,22 +287,26 @@ function HitCardModel({
     };
   }, [backUri, frontUrl, scene]);
 
-  useFrame(() => {
+  useFrame((_, dt) => {
+    spinApi.tick(dt);
     if (group.current) {
-      group.current.rotation.x = spin.current.x;
-      group.current.rotation.y = spin.current.y;
+      group.current.rotation.set(spinApi.pitch, spinApi.yaw, 0);
     }
     if (spark.current) {
-      spark.current.position.set(Math.sin(spin.current.y) * 1.2 + 0.2, 0.9, Math.cos(spin.current.y) * 1.4 + 1.1);
+      spark.current.position.set(
+        Math.sin(spinApi.yaw) * 0.7 + 0.45,
+        0.62,
+        0.28 + Math.cos(spinApi.yaw) * 0.22,
+      );
     }
   });
 
   return (
     <>
-      <directionalLight ref={spark} intensity={2.05} color="#fff4e0" />
-      <pointLight position={[0.2, 0.45, 1.6]} intensity={0.9} color="#ffffff" distance={4} />
+      <directionalLight ref={spark} intensity={1.15} color="#fff6e8" />
+      <pointLight position={[0.08, 0.12, 0.22]} intensity={0.35} color="#fff8ee" distance={0.7} />
       <group ref={group}>
-        <group rotation={[Math.PI / 2, 0, 0]} scale={8.15}>
+        <group rotation={[Math.PI / 2, 0, 0]}>
           <primitive object={scene} />
         </group>
       </group>
@@ -233,18 +314,22 @@ function HitCardModel({
   );
 }
 
-function printMaterial(metalness: number, clearcoat: number) {
+function printMaterial() {
   return new MeshPhysicalMaterial({
     color: '#ffffff',
-    metalness,
-    roughness: 0.28,
-    clearcoat,
-    clearcoatRoughness: 0.18,
-    reflectivity: 0.55,
+    metalness: 0.18,
+    roughness: 0.3,
+    clearcoat: 0.72,
+    clearcoatRoughness: 0.12,
+    reflectivity: 0.52,
+    ior: 1.5,
+    sheen: 0.18,
+    sheenRoughness: 0.45,
+    sheenColor: '#e8d4a4',
   });
 }
 
 const styles = StyleSheet.create({
-  fill: { width: CARD_W, height: CARD_H, overflow: 'hidden', backgroundColor: 'transparent' },
-  canvas: { width: CARD_W, height: CARD_H, backgroundColor: 'transparent', pointerEvents: 'none' },
+  fill: { width: HIT_CANVAS_W, height: HIT_CANVAS_H, backgroundColor: 'transparent' },
+  canvas: { width: HIT_CANVAS_W, height: HIT_CANVAS_H, backgroundColor: 'transparent', pointerEvents: 'none' },
 });

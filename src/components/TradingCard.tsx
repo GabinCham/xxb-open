@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { ActivityIndicator, Image, StyleSheet, Text, View } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 
+import { CARD_PIXEL_H, CARD_PIXEL_W } from '../data/cardSize';
 import type { PulledCard } from '../data/types';
 import { colorInk, rarityStyle } from '../theme';
 
@@ -17,8 +18,8 @@ export function TradingCard({ card, compact, count = 1, onReady }: Props) {
   const [loaded, setLoaded] = useState(false);
   const ink = colorInk[card.color];
   const rare = rarityStyle[card.variantLabel ?? card.rarity] ?? rarityStyle[card.rarity];
-  const width = compact ? 108 : 250;
-  const height = compact ? 151 : 349;
+  const width = compact ? 108 : CARD_PIXEL_W;
+  const height = compact ? 151 : CARD_PIXEL_H;
 
   useEffect(() => {
     if (failed || loaded) onReady?.();
