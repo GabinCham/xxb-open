@@ -30,9 +30,16 @@ function daySeed(day: string) {
   return [...day].reduce((seed, char) => (seed * 31 + char.charCodeAt(0)) >>> 0, 2166136261);
 }
 
+/** Shop day flips at local noon, not midnight. */
+export function shopDayKey(date = new Date()): string {
+  const shifted = new Date(date);
+  if (shifted.getHours() < 12) shifted.setDate(shifted.getDate() - 1);
+  return `${shifted.getFullYear()}-${shifted.getMonth() + 1}-${shifted.getDate()}`;
+}
+
 /** Three daily featured packs. OP-13 or OP-17 is guaranteed; both appear on one day out of four. */
 export function dailyBoosterIds(date = new Date()): string[] {
-  const day = `${date.getFullYear()}-${date.getMonth() + 1}-${date.getDate()}`;
+  const day = shopDayKey(date);
   let seed = daySeed(day);
   const next = () => {
     seed = (seed * 1664525 + 1013904223) >>> 0;
@@ -41,7 +48,9 @@ export function dailyBoosterIds(date = new Date()): string[] {
   const featured = [next() % 2 === 0 ? 'op13' : 'op17'];
   if (next() % 4 === 0) featured.push(featured[0] === 'op13' ? 'op17' : 'op13');
 
-  const candidates = BOOSTER_SETS.map((set) => set.id).filter((id) => !featured.includes(id));
+  const candidates = BOOSTER_SETS.filter(
+    (set) => !set.guaranteedHit && set.id !== 'op13-hits' && !featured.includes(set.id),
+  ).map((set) => set.id);
   while (featured.length < 3 && candidates.length) {
     featured.push(candidates.splice(next() % candidates.length, 1)[0]);
   }

@@ -1,7 +1,8 @@
-import { useMemo, useRef, useState } from 'react';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Animated, Image, Pressable, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
 
-import { BOOSTER_SETS, boosterPrice, dailyBoosterIds } from '../data/sets';
+import { BOOSTER_SETS, boosterPrice, dailyBoosterIds, shopDayKey } from '../data/sets';
 import { packTextureModule } from '../data/packTextures';
 import { TradingCard } from '../components/TradingCard';
 import { OP13_DISPLAY_PRICE, useGame } from '../game/GameContext';
@@ -19,10 +20,34 @@ export function SelectScreen({ blurred = false }: Props) {
   const { width, height } = useWindowDimensions();
   const [shutterVisible, setShutterVisible] = useState(false);
   const [shutterMessage, setShutterMessage] = useState('');
+  const [clock, setClock] = useState(() => Date.now());
+  const [speechVisible, setSpeechVisible] = useState(false);
   const shutter = useRef(new Animated.Value(0)).current;
-  const featuredBoosterIds = useMemo(() => dailyBoosterIds(), []);
+  const dayKey = shopDayKey(new Date(clock));
+  const featuredBoosterIds = useMemo(() => dailyBoosterIds(new Date(clock)), [dayKey]);
   const featuredCard = binderSlots[0] ? collection.find((card) => card.id === binderSlots[0]) : undefined;
-  const shopWidth = Math.min(width, height * (2 / 3));
+  const shopRatio = 2 / 3;
+  const shopWidth = Math.min(width, height * shopRatio);
+  const shopHeight = shopWidth / shopRatio;
+  const shopLeft = (width - shopWidth) / 2;
+  const shopTop = (height - shopHeight) / 2;
+
+  useEffect(() => {
+    const id = setInterval(() => setClock(Date.now()), 30_000);
+    return () => clearInterval(id);
+  }, []);
+
+  useEffect(() => {
+    const storageKey = `shop-speech-${dayKey}`;
+    AsyncStorage.getItem(storageKey).then((value) => {
+      if (value !== '1') setSpeechVisible(true);
+    });
+  }, [dayKey]);
+
+  const dismissSpeech = () => {
+    setSpeechVisible(false);
+    void AsyncStorage.setItem(`shop-speech-${dayKey}`, '1');
+  };
   const shelfStyle = {
     left: (width - shopWidth) / 2 + shopWidth * 0.11,
     top: height * 0.18,
@@ -126,6 +151,24 @@ export function SelectScreen({ blurred = false }: Props) {
             </View>
           </View>
         ) : null}
+        {!blurred && speechVisible ? (
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="Nouveau booster tous les jours à 12 heures. Appuie pour fermer."
+            onPress={dismissSpeech}
+            style={[
+              styles.speech,
+              {
+                left: shopLeft + shopWidth * 0.48,
+                top: shopTop + shopHeight * 0.34,
+              },
+            ]}
+          >
+            <Text style={styles.speechText}>Nouveau booster tous les jours à 12h</Text>
+            <View style={styles.speechTailBorder} />
+            <View style={styles.speechTail} />
+          </Pressable>
+        ) : null}
       </View>
       {shutterVisible ? (
         <Animated.View
@@ -186,4 +229,45 @@ const styles = StyleSheet.create({
   shutterMessage: { alignItems: 'center', backgroundColor: 'rgba(20, 13, 6, 0.92)', borderWidth: 2, borderColor: '#f3c66d', borderRadius: 16, paddingHorizontal: 24, paddingVertical: 18 },
   shutterTitle: { color: '#ffe2a0', fontWeight: '900', fontSize: 20, letterSpacing: 1.5 },
   shutterText: { color: '#fff2d1', fontSize: 16, fontWeight: '700', marginTop: 7 },
+  speech: {
+    position: 'absolute',
+    zIndex: 20,
+    width: 168,
+    backgroundColor: '#fffdf4',
+    borderColor: '#1a1208',
+    borderWidth: 3,
+    borderRadius: 22,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    transform: [{ rotate: '-5deg' }],
+    shadowColor: '#000',
+    shadowOpacity: 0.35,
+    shadowRadius: 6,
+    elevation: 12,
+  },
+  speechText: {
+    color: '#1a1208',
+    fontSize: 13,
+    fontWeight: '900',
+    lineHeight: 17,
+    textAlign: 'center',
+  },
+  speechTailBorder: {
+    position: 'absolute',
+    left: 22,
+    bottom: -13,
+    width: 18,
+    height: 18,
+    backgroundColor: '#1a1208',
+    transform: [{ rotate: '48deg' }],
+  },
+  speechTail: {
+    position: 'absolute',
+    left: 25,
+    bottom: -8,
+    width: 13,
+    height: 13,
+    backgroundColor: '#fffdf4',
+    transform: [{ rotate: '48deg' }],
+  },
 });
