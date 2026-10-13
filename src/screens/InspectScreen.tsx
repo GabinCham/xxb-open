@@ -1,10 +1,18 @@
 import * as Haptics from 'expo-haptics';
 import { LinearGradient } from 'expo-linear-gradient';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Image, Platform, Pressable, StyleSheet, Text, View } from 'react-native';
-import Animated, { Easing, useAnimatedStyle, useSharedValue, withSequence, withTiming } from 'react-native-reanimated';
+import Animated, {
+  Easing,
+  useAnimatedStyle,
+  useSharedValue,
+  withRepeat,
+  withSequence,
+  withTiming,
+} from 'react-native-reanimated';
 
 import { BackToShopButton } from '../components/BackToShopButton';
+import { HitFoilOverlay } from '../components/HitFoilOverlay';
 import { packTextureModule } from '../data/packTextures';
 import { useGame } from '../game/GameContext';
 import { colors } from '../theme';
@@ -15,6 +23,20 @@ export function InspectScreen({ overlay = false }: { overlay?: boolean }) {
   const scale = useSharedValue(1);
   const rotate = useSharedValue(0);
   const opacity = useSharedValue(1);
+  const yaw = useSharedValue(-1);
+  const foilY = useSharedValue(0);
+  const foilOn = useSharedValue(1);
+
+  useEffect(() => {
+    yaw.value = withRepeat(
+      withSequence(
+        withTiming(1, { duration: 2400, easing: Easing.inOut(Easing.sin) }),
+        withTiming(-1, { duration: 2400, easing: Easing.inOut(Easing.sin) }),
+      ),
+      -1,
+      false,
+    );
+  }, [yaw]);
 
   const open = () => {
     if (opening) return;
@@ -22,6 +44,8 @@ export function InspectScreen({ overlay = false }: { overlay?: boolean }) {
     if (Platform.OS !== 'web') {
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
     }
+    yaw.value = withTiming(0, { duration: 120 });
+    foilOn.value = withTiming(0, { duration: 180 });
     scale.value = withSequence(
       withTiming(1.08, { duration: 90 }),
       withTiming(1.18, { duration: 100 }),
@@ -33,7 +57,12 @@ export function InspectScreen({ overlay = false }: { overlay?: boolean }) {
   };
 
   const packStyle = useAnimatedStyle(() => ({
-    transform: [{ scale: scale.value }, { rotate: `${rotate.value}deg` }],
+    transform: [
+      { perspective: 1100 },
+      { rotateY: `${yaw.value * 24}deg` },
+      { scale: scale.value },
+      { rotate: `${rotate.value}deg` },
+    ],
     opacity: opacity.value,
   }));
 
@@ -57,8 +86,9 @@ export function InspectScreen({ overlay = false }: { overlay?: boolean }) {
       </Text>
 
       <Pressable onPress={open} style={styles.stage}>
-        <Animated.View style={packStyle}>
+        <Animated.View style={[styles.packWrap, packStyle]}>
           {packImage ? <Image source={packImage} resizeMode="contain" style={styles.heroPack} /> : null}
+          <HitFoilOverlay mx={yaw} my={foilY} active={foilOn} lit={foilOn} maskSource={packImage} />
         </Animated.View>
       </Pressable>
     </>
@@ -75,5 +105,10 @@ const styles = StyleSheet.create({
   title: { color: colors.white, fontSize: 28, fontWeight: '900', marginTop: 8, textAlign: 'center' },
   lead: { color: colors.muted, marginTop: 8, marginBottom: 28, textAlign: 'center' },
   stage: { alignItems: 'center', justifyContent: 'center', minHeight: 420, minWidth: 260 },
+  packWrap: {
+    width: 220,
+    height: 340,
+    isolation: 'isolate',
+  },
   heroPack: { width: 220, height: 340 },
 });

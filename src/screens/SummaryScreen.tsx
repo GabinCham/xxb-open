@@ -8,7 +8,7 @@ import { rarityStyle, colors } from '../theme';
 
 function hitLabel(card: { rarity: string; variantLabel?: string; name: string }) {
   if (card.variantLabel) return `${card.variantLabel} ${card.name}`;
-  if (['SEC', 'TR'].includes(card.rarity)) return `${card.rarity} ${card.name}`;
+  if (['SEC', 'TR', 'SP'].includes(card.rarity)) return `${card.rarity} ${card.name}`;
   return null;
 }
 

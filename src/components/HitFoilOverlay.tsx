@@ -1,5 +1,6 @@
+import { Asset } from 'expo-asset';
 import { LinearGradient } from 'expo-linear-gradient';
-import { Platform, StyleSheet } from 'react-native';
+import { Platform, StyleSheet, type ImageSourcePropType } from 'react-native';
 import Animated, { interpolate, type SharedValue, useAnimatedStyle } from 'react-native-reanimated';
 
 type Props = {
@@ -7,12 +8,40 @@ type Props = {
   my: SharedValue<number>;
   active: SharedValue<number>;
   lit: SharedValue<number>;
+  maskSource?: ImageSourcePropType;
 };
 
 const SHINE =
   'repeating-linear-gradient(30deg, rgba(10, 10, 10, 0.7) 8%, rgba(255, 255, 255, 0.6) 12%, rgba(10, 10, 10, 0.2) 15%, rgba(255, 255, 255, 0.6) 12%, rgba(10, 10, 10, 0.2) 16%, rgba(10, 10, 10, 0.5) 20%, rgba(10, 10, 10, 0.2) 36%)';
 
-export function HitFoilOverlay({ mx, my, active, lit }: Props) {
+function maskUriFromSource(source?: ImageSourcePropType): string | undefined {
+  if (source == null) return undefined;
+  if (typeof source === 'string') return source;
+  if (typeof source === 'object' && !Array.isArray(source) && 'uri' in source && source.uri) return source.uri;
+  try {
+    const asset = Asset.fromModule(source as number);
+    return asset.uri ?? asset.localUri ?? undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+export function HitFoilOverlay({ mx, my, active, lit, maskSource }: Props) {
+  const maskUri = maskUriFromSource(maskSource);
+  const maskStyle = maskUri
+    ? {
+        borderRadius: 0,
+        overflow: 'visible' as const,
+        maskImage: `url("${maskUri}")`,
+        WebkitMaskImage: `url("${maskUri}")`,
+        maskSize: 'contain',
+        WebkitMaskSize: 'contain',
+        maskRepeat: 'no-repeat',
+        WebkitMaskRepeat: 'no-repeat',
+        maskPosition: 'center',
+        WebkitMaskPosition: 'center',
+      }
+    : null;
   const webShine = useAnimatedStyle(() => ({
     opacity: active.value * interpolate(lit.value, [0, 1], [0.08, 0.25]),
     backgroundImage: SHINE,
@@ -33,7 +62,7 @@ export function HitFoilOverlay({ mx, my, active, lit }: Props) {
   }));
 
   if (Platform.OS === 'web') {
-    return <Animated.View pointerEvents="none" style={[styles.clip, styles.webShine, webShine]} />;
+    return <Animated.View pointerEvents="none" style={[styles.clip, styles.webShine, maskStyle, webShine]} />;
   }
 
   return (
