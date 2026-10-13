@@ -9,7 +9,7 @@ import { isHitCard } from '../data/hits';
 import { openBooster } from '../data/openPack';
 import { removeCopies, sellableCount, sellPrice } from '../data/sell';
 import { BOOSTER_SETS, boosterPrice, DEV_GRANT_BERRIES } from '../data/sets';
-import { emptyOpenStats, mergeOpenStats, packStatId, parseOpenStats, type OpenStats } from '../data/stats';
+import { emptyOpenStats, packStatId, parseOpenStats, type OpenStats } from '../data/stats';
 import type { BoosterSet, PulledCard } from '../data/types';
 import { supabase } from '../lib/supabase';
 
@@ -21,6 +21,16 @@ const BINDER_KEY = 'op-tcg-binder';
 const STATS_KEY = 'op-tcg-open-stats';
 const DISPLAY_KEY = 'op-tcg-display-progress';
 const WELCOME_KEY = 'op-tcg-welcome-gift';
+const GAME_KEYS = [
+  COINS_KEY,
+  COINS_LAST_EARNED_AT_KEY,
+  COINS_VERSION_KEY,
+  COLLECTION_KEY,
+  BINDER_KEY,
+  STATS_KEY,
+  DISPLAY_KEY,
+  WELCOME_KEY,
+];
 const WELCOME_PACK = 'op13';
 const WELCOME_CLAIMED = 'claimed';
 const PAGE = 4;
@@ -42,15 +52,6 @@ function withTrailingPage(slots: (string | null)[]): (string | null)[] {
   const last = next.slice(-PAGE);
   if (last.every(Boolean)) next.push(...emptyPage());
   return next.length ? next : emptyPage();
-}
-
-function mergeOwned(left: OwnedCard[], right: OwnedCard[]): OwnedCard[] {
-  const map = new Map<string, OwnedCard>();
-  for (const card of [...left, ...right]) {
-    const prev = map.get(card.id);
-    if (!prev || card.count > prev.count) map.set(card.id, card);
-  }
-  return [...map.values()];
 }
 
 type DisplayProgress = { epoch: number; queue: string[] };
@@ -82,26 +83,11 @@ function parseDisplay(value: unknown): DisplayProgress {
   return { epoch: Math.max(0, Math.floor(Number(raw.epoch) || 0)), queue };
 }
 
-function mergeDisplay(left: DisplayProgress, right: DisplayProgress): DisplayProgress {
-  if (left.epoch !== right.epoch) return left.epoch > right.epoch ? left : right;
-  return left.queue.length <= right.queue.length ? left : right;
-}
-
 function parseWelcomeGift(value: unknown): string | null {
   if (value == null || value === '') return null;
   const text = String(value);
   if (text === WELCOME_CLAIMED) return WELCOME_CLAIMED;
   return BOOSTER_SETS.some((set) => set.id === text) ? text : WELCOME_PACK;
-}
-
-function mergeWelcomeGift(left: string | null, right: string | null): string | null {
-  if (left === WELCOME_CLAIMED || right === WELCOME_CLAIMED) return WELCOME_CLAIMED;
-  return left ?? right;
-}
-
-function mergeBinder(left: (string | null)[], right: (string | null)[]): (string | null)[] {
-  const length = Math.max(left.length, right.length, PAGE);
-  return withTrailingPage(Array.from({ length }, (_, index) => right[index] ?? left[index] ?? null));
 }
 
 function op13DisplayQueue(): string[] {
@@ -175,6 +161,7 @@ export function GameProvider({ children }: { children: ReactNode }) {
   const [welcomeGift, setWelcomeGift] = useState<string | null>(null);
   const [openingGift, setOpeningGift] = useState(false);
   const remoteSynced = useRef(false);
+  const hadUser = useRef(false);
   const snapshot = useRef<PlayerSnapshot>({
     userId: user?.id ?? null,
     coins,
@@ -264,25 +251,33 @@ export function GameProvider({ children }: { children: ReactNode }) {
 
       if (!mounted) return;
 
+      if (error && !data) {
+        if (mounted) setRemoteReady(true);
+        return;
+      }
+
+      const hasRemote = data != null;
       const remoteCollection = Array.isArray(data?.collection) ? (data.collection as OwnedCard[]) : [];
       const remoteBinder = Array.isArray(data?.binder_slots)
         ? withTrailingPage(data.binder_slots as (string | null)[])
         : emptyPage();
-      const nextCollection = repairCollection(mergeOwned(local.collection, remoteCollection));
-      const nextBinder = mergeBinder(local.binderSlots, remoteBinder);
-      const nextStats = mergeOpenStats(local.stats, parseOpenStats({
+      const remoteStats = parseOpenStats({
         boostersOpened: data?.boosters_opened,
         hitsPulled: data?.hits_pulled,
         berriesSpent: data?.berries_spent,
-      }));
-      const nextDisplay = mergeDisplay(local.display, parseDisplay(data?.display_progress));
-      const nextWelcomeGift =
-        mergeWelcomeGift(local.welcomeGift, parseWelcomeGift(data?.welcome_gift)) ?? WELCOME_PACK;
+      });
       const savedCoins = Math.max(0, Number(data?.coins) || 0);
       const savedAt = Date.parse(data?.last_coin_earned_at ?? '');
       const baseAt = Number.isFinite(savedAt) ? savedAt : local.lastCoinEarnedAt;
       const earnLoginBonus = Date.now() - baseAt >= COIN_INTERVAL_MS;
-      const mergedCoins = Math.max(savedCoins, local.coins, DEV_GRANT_BERRIES);
+      const nextCollection = repairCollection(hasRemote ? remoteCollection : local.collection);
+      const nextBinder = hasRemote ? remoteBinder : withTrailingPage(local.binderSlots);
+      const nextStats = hasRemote ? remoteStats : local.stats;
+      const nextDisplay = hasRemote ? parseDisplay(data?.display_progress) : local.display;
+      const nextWelcomeGift = hasRemote
+        ? (parseWelcomeGift(data?.welcome_gift) ?? WELCOME_PACK)
+        : (local.welcomeGift ?? WELCOME_PACK);
+      const mergedCoins = hasRemote ? savedCoins : Math.max(local.coins, DEV_GRANT_BERRIES);
       const nextCoins = mergedCoins + (earnLoginBonus ? COINS_PER_INTERVAL : 0);
       const nextAt = earnLoginBonus ? Date.now() : baseAt;
 
@@ -328,6 +323,28 @@ export function GameProvider({ children }: { children: ReactNode }) {
     syncAccount();
     return () => { mounted = false; };
   }, [localReady, user?.id]);
+
+  useEffect(() => {
+    if (user) {
+      hadUser.current = true;
+      return;
+    }
+    if (!hadUser.current) {
+      setRemoteReady(true);
+      return;
+    }
+    hadUser.current = false;
+    remoteSynced.current = false;
+    setRemoteReady(true);
+    setCoins(STARTING_COINS);
+    setLastCoinEarnedAt(Date.now());
+    setCollection([]);
+    setBinderSlots(emptyPage());
+    setOpenStats(emptyOpenStats());
+    setDisplay(emptyDisplay());
+    setWelcomeGift(null);
+    AsyncStorage.multiRemove(GAME_KEYS).catch(() => {});
+  }, [user]);
 
   useEffect(() => {
     const timer = setInterval(() => setClock(Date.now()), 1000);
@@ -438,7 +455,7 @@ export function GameProvider({ children }: { children: ReactNode }) {
 
   const value = useMemo<GameContextValue>(
     () => ({
-      ready: localReady && remoteReady,
+      ready: localReady && (!user || remoteReady),
       coins,
       coinsPerInterval: COINS_PER_INTERVAL,
       coinIntervalMs: COIN_INTERVAL_MS,
@@ -608,7 +625,7 @@ export function GameProvider({ children }: { children: ReactNode }) {
         setActiveTab('binder');
       },
     }),
-    [localReady, remoteReady, coins, clock, lastCoinEarnedAt, phase, tab, selectedSet, pulls, collection, binderSlots, pickSlot, selling, openStats, display, displaySession, welcomeGift, openingGift],
+    [localReady, remoteReady, user, coins, clock, lastCoinEarnedAt, phase, tab, selectedSet, pulls, collection, binderSlots, pickSlot, selling, openStats, display, displaySession, welcomeGift, openingGift],
   );
 
   return <GameContext.Provider value={value}>{children}</GameContext.Provider>;
