@@ -1,0 +1,26 @@
+{
+  "name": "Grand Line Shop",
+  "short_name": "Grand Line",
+  "description": "Boutique One Piece TCG",
+  "lang": "fr",
+  "start_url": "/xxb-open/",
+  "scope": "/xxb-open/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#07070c",
+  "theme_color": "#07070c",
+  "icons": [
+    {
+      "src": "/xxb-open/pwa-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/xxb-open/pwa-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}

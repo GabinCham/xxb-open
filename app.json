@@ -20,7 +20,14 @@
     },
     "web": {
       "favicon": "./assets/favicon.png",
-      "bundler": "metro"
+      "bundler": "metro",
+      "name": "Grand Line Shop",
+      "shortName": "Grand Line",
+      "lang": "fr",
+      "themeColor": "#07070c",
+      "backgroundColor": "#07070c",
+      "display": "standalone",
+      "barStyle": "black-translucent"
     },
     "experiments": {
       "baseUrl": "/xxb-open"
