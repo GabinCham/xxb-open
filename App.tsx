@@ -29,9 +29,15 @@ function Root() {
 
   return (
     <View style={styles.fill}>
-      {opening ? (
+      {phase === 'inspect' ? (
         <View style={styles.page}>
-          {phase === 'inspect' ? <InspectScreen /> : null}
+          <SelectScreen blurred />
+          <View style={styles.openingOverlay}>
+            <InspectScreen overlay />
+          </View>
+        </View>
+      ) : opening ? (
+        <View style={styles.page}>
           {phase === 'reveal' ? <RevealScreen /> : null}
           {phase === 'summary' ? <SummaryScreen /> : null}
         </View>
@@ -65,5 +71,6 @@ export default function App() {
 const styles = StyleSheet.create({
   fill: { flex: 1, backgroundColor: colors.bg },
   page: { flex: 1 },
+  openingOverlay: { ...StyleSheet.absoluteFill },
   boot: { flex: 1, backgroundColor: colors.bg, alignItems: 'center', justifyContent: 'center' },
 });

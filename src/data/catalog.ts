@@ -154,15 +154,30 @@ export function allPrintedCodes(): string[] {
   return [...codes];
 }
 
+const OCR_NAME_ALIASES: Record<string, string> = {
+  baggy: 'buggy',
+  baggi: 'buggy',
+  bagsy: 'buggy',
+  buggi: 'buggy',
+};
+
 export function findCardsByOcrName(ocr: string): CardDef[] {
-  const hay = ocr.toLowerCase().replace(/[^a-z0-9]+/g, ' ');
+  let hay = ocr.toLowerCase().replace(/[^a-z0-9]+/g, ' ');
+  hay = ` ${hay} `.replace(/\s+/g, ' ');
+  for (const [from, to] of Object.entries(OCR_NAME_ALIASES)) {
+    hay = hay.replace(new RegExp(`\\b${from}\\b`, 'g'), to);
+  }
   const found: CardDef[] = [];
   const seen = new Set<string>();
   for (const set of BOOSTER_SETS) {
     if (set.guaranteedHit) continue;
     for (const card of getCachedSetCards(set.id)) {
       const name = card.name.toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
-      if (name.length < 5 || !hay.includes(name) || seen.has(card.id)) continue;
+      if (!name || seen.has(card.id)) continue;
+      const tokens = name.split(' ').filter(Boolean);
+      const last = tokens[tokens.length - 1] ?? name;
+      const hit = (name.length >= 5 && hay.includes(name)) || (last.length >= 4 && hay.includes(` ${last} `));
+      if (!hit) continue;
       seen.add(card.id);
       found.push(card);
     }

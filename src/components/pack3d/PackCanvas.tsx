@@ -168,11 +168,19 @@ function PackModel({
           if (!isMesh(child)) return;
           const kind = foilKind(child);
           if (!kind) return;
+          // The printed artwork is its own light source. Without emissive
+          // light, the angled foil surface makes it appear to have a dark
+          // overlay. Keep its physical material, but preserve the artwork's
+          // original brightness independently of the scene lights.
           const material = child.material as MeshStandardMaterial;
           material.map = texture;
+          material.emissiveMap = texture;
           material.color.set('#ffffff');
-          material.metalness = kind === 'FRONT' ? 0.1 : 0.22;
-          material.roughness = kind === 'FRONT' ? 0.38 : 0.5;
+          material.emissive.set('#ffffff');
+          material.emissiveIntensity = 0.9;
+          material.toneMapped = false;
+          material.metalness = kind === 'FRONT' ? 0.04 : 0.12;
+          material.roughness = kind === 'FRONT' ? 0.45 : 0.58;
           if (kind === 'BACK') material.color = new Color(accent).lerp(new Color('#ffffff'), 0.35);
           material.needsUpdate = true;
         });

@@ -15,7 +15,7 @@ export function ScannerScreen() {
   const [permission, requestPermission] = useCameraPermissions();
   const [torch, setTorch] = useState(false);
   const [busy, setBusy] = useState(false);
-  const [status, setStatus] = useState('Cadre toute la carte · reconnaissance par illustration');
+  const [status, setStatus] = useState('Rapproche la carte : nom, 3000 et code en bas lisibles');
   const [preview, setPreview] = useState<string | null>(null);
   const [result, setResult] = useState<ScanResult | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -71,14 +71,13 @@ export function ScannerScreen() {
     setResult(null);
     setError(null);
     setPreview(null);
-    setStatus('Cadre toute la carte · reconnaissance par illustration');
+    setStatus('Rapproche la carte : nom, 3000 et code en bas lisibles');
   };
 
   return (
     <LinearGradient colors={['#101018', colors.bg]} style={styles.fill}>
       <View style={styles.header}>
-        <Text style={styles.kicker}>IDENTIFY</Text>
-        <Text style={styles.title}>Scanner</Text>
+        <Text style={styles.kicker}>SCANNER</Text>
         <Text style={styles.lead}>{status}</Text>
       </View>
 
@@ -110,10 +109,9 @@ export function ScannerScreen() {
             </Pressable>
           </View>
         ) : preview && (busy || error) ? (
-          <View style={styles.previewWrap}>
-            <Image source={{ uri: preview }} style={styles.preview} resizeMode="cover" />
+          <View style={styles.previewCol}>
+            <Image source={{ uri: preview }} style={styles.preview} resizeMode="contain" />
             {busy ? <ActivityIndicator color={colors.gold} style={styles.spinner} /> : null}
-            {error ? <Text style={styles.err}>{error}</Text> : null}
           </View>
         ) : permission?.granted ? (
           <Pressable
@@ -147,22 +145,27 @@ export function ScannerScreen() {
         ) : (
           <View style={styles.need}>
             <Text style={styles.needText}>Autorise la caméra pour viser tes cartes, ou importe une photo.</Text>
-            <Pressable style={styles.shutter} onPress={() => requestPermission()}>
-              <Text style={styles.shutterText}>Autoriser la caméra</Text>
-            </Pressable>
           </View>
         )}
       </View>
 
+      {error ? <Text style={styles.err}>{error}</Text> : null}
+
       <View style={styles.actions}>
         {result ? null : (
           <>
-            <Pressable style={[styles.shutter, busy && styles.disabled]} onPress={shoot} disabled={busy || !permission?.granted}>
-              <Text style={styles.shutterText}>{busy ? 'Analyse…' : 'Photographier'}</Text>
-            </Pressable>
+            {!permission?.granted ? (
+              <Pressable style={styles.shutter} onPress={() => requestPermission()}>
+                <Text style={styles.shutterText}>Autoriser la caméra</Text>
+              </Pressable>
+            ) : (
+              <Pressable style={[styles.shutter, busy && styles.disabled]} onPress={error ? reset : shoot} disabled={busy}>
+                <Text style={styles.shutterText}>{busy ? 'Analyse…' : error ? 'Rephotographier' : 'Photographier'}</Text>
+              </Pressable>
+            )}
             <View style={styles.row}>
-              <Pressable style={styles.ghost} onPress={error ? reset : fromLibrary} disabled={busy}>
-                <Text style={styles.ghostText}>{error ? 'Réessayer' : 'Galerie'}</Text>
+              <Pressable style={styles.ghost} onPress={fromLibrary} disabled={busy}>
+                <Text style={styles.ghostText}>Galerie</Text>
               </Pressable>
               <Pressable style={styles.ghost} onPress={() => setTorch((on) => !on)} disabled={busy || !permission?.granted}>
                 <Text style={styles.ghostText}>{torch ? 'Lampe off' : 'Lampe'}</Text>
@@ -178,20 +181,26 @@ export function ScannerScreen() {
 const styles = StyleSheet.create({
   fill: { flex: 1 },
   header: {
-    paddingTop: 52,
+    paddingTop: 44,
     paddingHorizontal: 20,
+    paddingBottom: 4,
     maxWidth: 720,
     width: '100%',
     alignSelf: 'center',
   },
   kicker: { color: colors.gold, letterSpacing: 2, fontWeight: '800', fontSize: 12 },
-  title: { color: colors.white, fontSize: 32, fontWeight: '900', marginTop: 8 },
-  lead: { color: colors.muted, marginTop: 8, lineHeight: 22 },
-  stage: { flex: 1, paddingHorizontal: 20, paddingTop: 16, justifyContent: 'center' },
+  lead: { color: colors.muted, marginTop: 6, lineHeight: 20, fontSize: 13 },
+  stage: {
+    flex: 1,
+    paddingHorizontal: 16,
+    justifyContent: 'center',
+    minHeight: 0,
+  },
   viewfinder: {
     alignSelf: 'center',
     width: '100%',
-    maxWidth: 420,
+    maxWidth: 380,
+    maxHeight: '100%',
     aspectRatio: 0.72,
     borderRadius: 18,
     overflow: 'hidden',
@@ -201,24 +210,16 @@ const styles = StyleSheet.create({
   camera: { flex: 1 },
   guide: {
     position: 'absolute',
-    left: '8%',
-    right: '8%',
-    top: '10%',
-    bottom: '10%',
+    left: '6%',
+    right: '6%',
+    top: '6%',
+    bottom: '6%',
     borderWidth: 2,
     borderColor: 'rgba(232,195,106,0.7)',
     borderRadius: 12,
   },
-  previewWrap: {
-    alignSelf: 'center',
-    width: '100%',
-    maxWidth: 420,
-    aspectRatio: 0.72,
-    borderRadius: 18,
-    overflow: 'hidden',
-    backgroundColor: '#111',
-  },
-  preview: { width: '100%', height: '100%' },
+  previewCol: { flex: 1, minHeight: 0, justifyContent: 'center' },
+  preview: { width: '100%', height: '100%', maxHeight: 420 },
   spinner: { position: 'absolute', alignSelf: 'center', top: '48%' },
   card: {
     alignSelf: 'center',
@@ -258,26 +259,25 @@ const styles = StyleSheet.create({
     paddingVertical: 10,
   },
   againText: { color: colors.gold, fontWeight: '800' },
-  err: {
-    position: 'absolute',
-    bottom: 16,
-    left: 12,
-    right: 12,
-    color: colors.cream,
-    textAlign: 'center',
-    backgroundColor: 'rgba(0,0,0,0.65)',
-    padding: 10,
-    borderRadius: 10,
-  },
   need: { padding: 24, alignItems: 'center', gap: 16 },
   needText: { color: colors.muted, textAlign: 'center', lineHeight: 22 },
+  err: {
+    color: colors.cream,
+    textAlign: 'center',
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    fontSize: 13,
+    lineHeight: 18,
+  },
   actions: {
     paddingHorizontal: 20,
-    paddingBottom: TAB_BAR_HEIGHT + 16,
-    gap: 10,
+    paddingTop: 8,
+    paddingBottom: TAB_BAR_HEIGHT + 12,
+    gap: 8,
     maxWidth: 420,
     width: '100%',
     alignSelf: 'center',
+    backgroundColor: '#101018',
   },
   shutter: {
     backgroundColor: colors.gold,
@@ -289,6 +289,5 @@ const styles = StyleSheet.create({
   ghost: { alignItems: 'center', paddingVertical: 8, flex: 1 },
   ghostText: { color: colors.gold, fontWeight: '700' },
   row: { flexDirection: 'row', justifyContent: 'space-around' },
-  ghostText: { color: colors.gold, fontWeight: '700' },
   disabled: { opacity: 0.5 },
 });

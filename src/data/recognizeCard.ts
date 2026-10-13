@@ -1,10 +1,19 @@
-import { createWorker, type Worker } from 'tesseract.js';
+import { PSM, createWorker, type Worker } from 'tesseract.js';
 
-import { findCardsByOcrName, findCardsByPrintedCode, printedCodeFromId, allPrintedCodes } from './catalog';
-import { fetchPrintedCard, formatMoney, LANG_COPY, pickVariant, quoteForLang, type ScanLang } from './cardPrices';
-import { officialCardImage } from './images';
-import type { CardDef } from './types';
-import { ensureVisualIndex, fingerprintFromUri, matchVisual, visualIndexProgress } from './visualIndex';
+import { findCardsByOcrName, findCardsByPrintedCode, printedCodeFromId } from './catalog';
+import { fetchPrintedCard, formatMoney, LANG_COPY, pickVariant, quoteForLang, searchSetCards, type ScanLang } from './cardPrices';
+import { catalogThumb, officialCardImage } from './images';
+import type { CardDef, ColorId } from './types';
+import {
+  canvasFromUri,
+  cropArtWindow,
+  cropBand,
+  cropNumberStrip,
+  cropPhotoToCard,
+  enhanceForOcr,
+  fingerprint,
+  pickClosestArt,
+} from './visualIndex';
 
 export type ScanResult = {
   code: string;
@@ -58,6 +67,7 @@ function normalizeOcr(text: string) {
   return text
     .toUpperCase()
     .replace(/[|\[\]]/g, 'I')
+    .replace(/0P(\d)/g, 'OP$1')
     .replace(/O(\d)/g, '0$1')
     .replace(/(\d)O/g, (_, digit: string) => `${digit}0`)
     .replace(/OPO/g, 'OP0');
@@ -71,7 +81,7 @@ function formatCode(prefix: string, set: string, number: string) {
 function extractCodes(text: string): string[] {
   const src = normalizeOcr(text);
   const found = new Set<string>();
-  for (const match of src.matchAll(/\b(OP|EB|ST|PRB)\s*0?(\d{1,2})\s*[-–—]?\s*(\d{3})\b/g)) {
+  for (const match of src.matchAll(/(OP|EB|ST|PRB)\s*0?(\d{1,2})\s*[-–—.:]?\s*(\d{3})/g)) {
     found.add(formatCode(match[1], match[2], match[3]));
   }
   for (const match of src.matchAll(/\bP\s*[-]?\s*(\d{3})\b/g)) {
@@ -86,7 +96,12 @@ function extractCodes(text: string): string[] {
 
 export function detectLang(text: string): ScanLang {
   if (/[\u3040-\u30ff\u4e00-\u9faf]/.test(text)) return 'jp';
-  if (/\b(personnage|événement|evenement|coût)\b/i.test(text) || /[àâçéèêëîïôùûü]/i.test(text)) return 'fr';
+  if (
+    /\b(personnage|événement|evenement|coût|votre|dessus|ajoutez|révélez|revelez)\b/i.test(text) ||
+    /[àâçéèêëîïôùûü]/i.test(text)
+  ) {
+    return 'fr';
+  }
   if (/\b(charakter|ereignis|kosten)\b/i.test(text) || /[äöüß]/i.test(text)) return 'de';
   if (/\b(personaggio|evento)\b/i.test(text)) return 'it';
   if (/\b(personaje|coste)\b/i.test(text) || /[ñ¡¿]/i.test(text)) return 'es';
@@ -104,159 +119,341 @@ export async function applyScanLang(hit: ScanResult, lang: ScanLang): Promise<Sc
   };
 }
 
-function levenshtein(a: string, b: string) {
-  const rows = Array.from({ length: b.length + 1 }, (_, i) => i);
-  for (let i = 1; i <= a.length; i += 1) {
-    let prev = i - 1;
-    rows[0] = i;
-    for (let j = 1; j <= b.length; j += 1) {
-      const cur = rows[j];
-      const cost = a[i - 1] === b[j - 1] ? 0 : 1;
-      rows[j] = Math.min(rows[j] + 1, rows[j - 1] + 1, prev + cost);
-      prev = cur;
-    }
+function extractSetPrefixes(text: string): string[] {
+  const src = normalizeOcr(text);
+  const found = new Set<string>();
+  for (const match of src.matchAll(/(OP|EB|ST|PRB)\s*-?\s*0?(\d{1,2})/g)) {
+    found.add(`${match[1]}${match[2].padStart(2, '0')}`);
   }
-  return rows[b.length];
+  return [...found];
 }
 
-function fuzzyCodes(text: string): string[] {
-  const known = allPrintedCodes();
-  const tokens = normalizeOcr(text).match(/[A-Z0-9]{2,6}[-–—]\d{3}/g) ?? [];
-  const ranked: { code: string; d: number }[] = [];
-  for (const raw of tokens) {
-    const token = raw.replace(/[-–—]/g, '-');
-    const suffix = token.slice(-3);
-    for (const code of known) {
-      if (code.slice(-3) !== suffix) continue;
-      const d = levenshtein(token.replace(/-/g, ''), code.replace(/-/g, ''));
-      if (d <= 3) ranked.push({ code, d });
-    }
-  }
-  ranked.sort((a, b) => a.d - b.d);
-  return [...new Set(ranked.map((item) => item.code))];
+function extractPowers(text: string): number[] {
+  const compact = text.replace(/[Oo]/g, '0').replace(/[^\d]/g, '');
+  const values = [...compact.matchAll(/[1-9]\d{3}/g)].map((match) => Number(match[0].slice(0, 4)));
+  return [...new Set(values.filter((value) => value >= 1000 && value <= 15000 && value % 1000 === 0))];
 }
 
-function pickCode(text: string): string | null {
-  const exact = extractCodes(text).filter((code) => findCardsByPrintedCode(code).length || true);
-  const fuzzy = fuzzyCodes(text);
-  const named = [
-    ...new Set(
-      findCardsByOcrName(text)
-        .map((card) => printedCodeFromId(card.id))
-        .filter((code): code is string => Boolean(code)),
-    ),
-  ];
-  const knownExact = exact.filter((code) => findCardsByPrintedCode(code).length);
-  if (knownExact[0]) return knownExact[0];
-  if (exact[0]) return exact[0];
-  const overlap = fuzzy.filter((code) => named.includes(code));
-  if (overlap[0]) return overlap[0];
-  if (named.length === 1) return named[0];
-  if (fuzzy[0]) return fuzzy[0];
+type ScanHints = { powers: number[]; costs: number[]; color: ColorId | null };
+
+function uniqueByCode(cards: CardDef[]) {
+  const map = new Map<string, CardDef>();
+  for (const card of cards) {
+    const code = printedCodeFromId(card.id);
+    if (!code) continue;
+    const prev = map.get(code);
+    if (!prev || card.finish === 'base') map.set(code, card);
+  }
+  return [...map.values()];
+}
+
+function hintColor(card: HTMLCanvasElement): ColorId | null {
+  const ctx = card.getContext('2d', { willReadFrequently: true });
+  if (!ctx) return null;
+  const w = card.width;
+  const h = card.height;
+  const img = ctx.getImageData(w * 0.22, h * 0.015, Math.max(8, w * 0.56), Math.max(8, h * 0.1));
+  let r = 0;
+  let g = 0;
+  let b = 0;
+  let n = 0;
+  for (let i = 0; i < img.data.length; i += 4) {
+    r += img.data[i];
+    g += img.data[i + 1];
+    b += img.data[i + 2];
+    n += 1;
+  }
+  if (!n) return null;
+  r /= n;
+  g /= n;
+  b /= n;
+  if (r > g + 28 && r > b + 28) return 'red';
+  if (g > r + 20 && g > b + 12) return 'green';
+  if (b > r + 20 && b > g + 12) return 'blue';
+  if (r > 80 && b > 80 && g < r - 15 && g < b - 15) return 'purple';
+  if (r > 90 && g > 70 && b < 70 && r > b + 25) return 'yellow';
+  if (r < 70 && g < 70 && b < 80) return 'black';
   return null;
 }
 
-async function cropCardNumber(uri: string): Promise<string | null> {
-  if (typeof document === 'undefined') return null;
-  const img = await new Promise<HTMLImageElement>((resolve, reject) => {
-    const image = new Image();
-    image.onload = () => resolve(image);
-    image.onerror = () => reject(new Error('image'));
-    image.src = uri;
+function extractCosts(text: string): number[] {
+  const src = text.replace(/O/gi, '0');
+  const values = [...src.matchAll(/\b([1-9]|10)\b/g)].map((match) => Number(match[1]));
+  return [...new Set(values.filter((value) => value >= 1 && value <= 10))];
+}
+
+const API_COLOR: Record<ColorId, string> = {
+  red: 'Red',
+  green: 'Green',
+  blue: 'Blue',
+  purple: 'Purple',
+  black: 'Black',
+  yellow: 'Yellow',
+};
+
+const NAME_STOP = new Set([
+  'personnage',
+  'character',
+  'event',
+  'evenement',
+  'stage',
+  'leader',
+  'contre',
+  'counter',
+  'baron',
+  'bande',
+  'pirate',
+  'pirates',
+  'votre',
+  'dessus',
+  'cartes',
+  'carte',
+  'regardez',
+  'ajoutez',
+  'revelez',
+  'deck',
+  'combat',
+  'attribut',
+  'tranche',
+  'slash',
+  'this',
+  'cannot',
+  'from',
+  'hand',
+  'then',
+  'place',
+  'rest',
+  'bottom',
+  'order',
+  'play',
+]);
+
+function editDistance(a: string, b: string) {
+  if (Math.abs(a.length - b.length) > 1) return 99;
+  const prev = Array.from({ length: a.length + 1 }, (_, index) => index);
+  for (let j = 1; j <= b.length; j += 1) {
+    let last = prev[0];
+    prev[0] = j;
+    for (let i = 1; i <= a.length; i += 1) {
+      const cur = prev[i];
+      prev[i] = a[i - 1] === b[j - 1] ? last : 1 + Math.min(last, prev[i], prev[i - 1]);
+      last = cur;
+    }
+  }
+  return prev[a.length];
+}
+
+function nameQueries(text: string): string[] {
+  const hay = text.toLowerCase().replace(/[^a-z0-9]+/g, ' ');
+  const out: string[] = [];
+  const seen = new Set<string>();
+  for (const token of hay.split(' ').filter(Boolean)) {
+    let q = token;
+    if (editDistance(token, 'baggy') <= 1 || editDistance(token, 'buggy') <= 1) q = 'buggy';
+    if (q.length < 4 || NAME_STOP.has(q) || /^\d+$/.test(q)) continue;
+    if (seen.has(q)) continue;
+    seen.add(q);
+    out.push(q[0].toUpperCase() + q.slice(1));
+  }
+  out.sort((a, b) => Number(b === 'Buggy') - Number(a === 'Buggy') || b.length - a.length);
+  return out;
+}
+
+function uniqueApiHits(hits: Awaited<ReturnType<typeof searchSetCards>>) {
+  const map = new Map<string, (typeof hits)[number]>();
+  for (const hit of hits) {
+    const code = hit.card_set_id?.toUpperCase();
+    if (!code) continue;
+    const prev = map.get(code);
+    const alt = /_p/i.test(hit.card_image_id ?? '');
+    const prevAlt = prev ? /_p/i.test(prev.card_image_id ?? '') : true;
+    if (!prev || (prevAlt && !alt)) map.set(code, hit);
+  }
+  return [...map.entries()].map(([code, item]) => ({ code, item }));
+}
+
+async function pickCodeFromHits(hits: Awaited<ReturnType<typeof searchSetCards>>, card: HTMLCanvasElement) {
+  const unique = uniqueApiHits(hits);
+  if (unique.length === 1) return unique[0].code;
+  if (unique.length > 1) {
+    const photoPrint = fingerprint(cropArtWindow(card));
+    const visual = await pickClosestArt(
+      photoPrint,
+      unique.slice(0, 12).map(({ code, item }) => ({
+        code,
+        imageUrl: item.card_image ? catalogThumb(officialCardImage(item.card_image, 180), 180) : undefined,
+      })),
+    );
+    return visual?.item.code ?? null;
+  }
+  return null;
+}
+
+async function resolveFromApi(text: string, hints: ScanHints, card: HTMLCanvasElement) {
+  const color = hints.color ? API_COLOR[hints.color] : undefined;
+  for (const name of nameQueries(text).slice(0, 4)) {
+    const code = await pickCodeFromHits(
+      await searchSetCards({
+        name,
+        power: hints.powers[0],
+        cost: hints.costs[0],
+        color,
+        type: 'Character',
+      }),
+      card,
+    );
+    if (code) return code;
+  }
+  if (hints.powers[0] && color) {
+    return pickCodeFromHits(
+      await searchSetCards({
+        power: hints.powers[0],
+        cost: hints.costs[0],
+        color,
+        type: 'Character',
+      }),
+      card,
+    );
+  }
+  return null;
+}
+
+function narrowNamed(named: CardDef[], text: string, hints: ScanHints): CardDef[] {
+  if (!named.length) return named;
+  const prefixes = extractSetPrefixes(text);
+  let pool = named;
+  const keep = (next: CardDef[]) => {
+    if (next.length) pool = next;
+  };
+  if (prefixes.length) {
+    keep(
+      pool.filter((card) => {
+        const code = printedCodeFromId(card.id);
+        return Boolean(code && prefixes.some((prefix) => code.startsWith(prefix)));
+      }),
+    );
+  }
+  if (hints.powers.length) {
+    keep(pool.filter((card) => card.power != null && hints.powers.includes(card.power)));
+  }
+  if (hints.costs.length) {
+    keep(pool.filter((card) => hints.costs.includes(card.cost)));
+  }
+  if (hints.color) {
+    keep(pool.filter((card) => card.color === hints.color));
+  }
+  return pool;
+}
+
+function pickCode(text: string, named: CardDef[]): string | null {
+  const extracted = extractCodes(text);
+  const namedCodes = uniqueByCode(named)
+    .map((card) => printedCodeFromId(card.id))
+    .filter((code): code is string => Boolean(code));
+  const exactNamed = extracted.filter((code) => namedCodes.includes(code));
+  if (exactNamed[0]) return exactNamed[0];
+  const inCatalog = extracted.filter((code) => findCardsByPrintedCode(code).length);
+  if (inCatalog[0]) return inCatalog[0];
+  if (extracted.length === 1) return extracted[0];
+  if (namedCodes.length === 1) return namedCodes[0];
+  return null;
+}
+
+async function readSlice(tess: Worker, slice: HTMLCanvasElement, psm: number, whitelist = '', both = false) {
+  await tess.setParameters({
+    tessedit_char_whitelist: whitelist,
+    tessedit_pageseg_mode: psm,
+    user_defined_dpi: '300',
   });
-  const canvas = document.createElement('canvas');
-  const height = Math.max(32, Math.round(img.height * 0.2));
-  canvas.width = img.width;
-  canvas.height = height;
-  const ctx = canvas.getContext('2d');
-  if (!ctx) return null;
-  ctx.drawImage(img, 0, img.height - height, img.width, height, 0, 0, img.width, height);
-  return canvas.toDataURL('image/jpeg', 0.95);
+  const sources = both ? [slice, enhanceForOcr(slice)] : whitelist ? [enhanceForOcr(slice)] : [slice];
+  let text = '';
+  for (const source of sources) {
+    const line = await tess.recognize(source.toDataURL('image/jpeg', 0.92));
+    text += `\n${line.data.text ?? ''}`;
+  }
+  return text;
+}
+
+async function readText(card: HTMLCanvasElement) {
+  const tess = await ocrWorker();
+  const powerText = await readSlice(tess, cropBand(card, 0.01, 0.14, 0.58, 0.99, 700), PSM.SINGLE_LINE, '0123456789', true);
+  const costText = await readSlice(tess, cropBand(card, 0.01, 0.16, 0.01, 0.22, 280), PSM.SINGLE_LINE, '0123456789', true);
+  const nameText = await readSlice(tess, cropBand(card, 0.6, 0.74, 0.1, 0.9, 1400), PSM.SINGLE_LINE, '', true);
+  const numberText = await readSlice(tess, cropNumberStrip(card), PSM.SPARSE_TEXT, '', true);
+  const bottomText = await readSlice(tess, cropBand(card, 0.72, 1, 0, 1, 1100), PSM.SPARSE_TEXT, '', true);
+  const fullText = await readSlice(tess, card, PSM.SPARSE_TEXT);
+  const text = [powerText, costText, nameText, numberText, bottomText, fullText].join('\n');
+  const powers = extractPowers(powerText);
+  return {
+    text,
+    powers: powers.length ? powers : extractPowers(text),
+    costs: extractCosts(costText),
+  };
 }
 
 export async function recognizeCard(uri: string, onStatus?: (msg: string) => void): Promise<ScanResult> {
-  onStatus?.('Analyse de l’illustration…');
-  const visualReady = visualIndexProgress().ready;
-  const visualJob = (async () => {
-    try {
-      await ensureVisualIndex(onStatus);
-      const print = await fingerprintFromUri(uri);
-      return matchVisual(print.hash, print.colors, 10);
-    } catch {
-      return [];
+  onStatus?.('Lecture de la carte…');
+  const photo = await canvasFromUri(uri);
+  const card = cropPhotoToCard(photo);
+  const { text, powers, costs } = await readText(card);
+  const hints = { powers, costs, color: hintColor(card) };
+  const named = narrowNamed(findCardsByOcrName(text), text, hints);
+  let code = pickCode(text, named);
+  if (!code && named.length) {
+    const unique = uniqueByCode(named);
+    if (unique.length === 1) {
+      code = printedCodeFromId(unique[0].id);
+    } else if (unique.length > 1) {
+      onStatus?.('Comparaison des versions…');
+      const photoPrint = fingerprint(cropArtWindow(card));
+      const visual = await pickClosestArt(
+        photoPrint,
+        unique.slice(0, 8).map((item) => ({ ...item, imageUrl: item.imageUrl ? catalogThumb(item.imageUrl, 180) : undefined })),
+      );
+      code = visual ? printedCodeFromId(visual.item.id) : printedCodeFromId(unique[0].id);
     }
-  })();
-  const ocrJob = (async () => {
-    try {
-      const tess = await ocrWorker();
-      const full = await tess.recognize(uri);
-      let text = full.data.text ?? '';
-      const strip = await cropCardNumber(uri);
-      if (strip) {
-        const bottom = await tess.recognize(strip);
-        text = `${text}\n${bottom.data.text ?? ''}`;
-      }
-      return text;
-    } catch {
-      return '';
-    }
-  })();
-
-  if (!visualReady) onStatus?.('Index visuel du catalogue…');
-  const [visual, text] = await Promise.all([visualJob, ocrJob]);
-  const ocrCode = text ? pickCode(text) : null;
-  const best = visual[0];
-  const ocrHits = ocrCode ? visual.filter((entry) => entry.code === ocrCode) : [];
-  let chosen =
-    ocrHits[0] && (ocrHits[0].distance < 0.42 || !best || ocrHits[0].distance <= (best.distance ?? 1) + 0.04)
-      ? ocrHits[0]
-      : best && best.distance < 0.38
-        ? best
-        : ocrHits[0] ?? (best && best.distance < 0.5 ? best : null);
-
-  if (!chosen?.code && ocrCode) {
-    const catalogHit = findCardsByPrintedCode(ocrCode)[0];
-    chosen = {
-      id: catalogHit?.id ?? ocrCode,
-      code: ocrCode,
-      name: catalogHit?.name ?? ocrCode,
-      hash: '',
-      colors: [],
-      imageUrl: catalogHit?.imageUrl,
-      finish: catalogHit?.finish,
-      variantLabel: catalogHit?.variantLabel,
-      distance: 1,
-    };
+  }
+  if (!code) {
+    onStatus?.('Recherche dans le catalogue…');
+    code = await resolveFromApi(text, hints, card);
+  }
+  if (!code) {
+    throw new Error('Carte non reconnue. Cadre la carte de plus près, nom et numéro lisibles.');
   }
 
-  if (!chosen?.code) {
-    throw new Error('Carte non reconnue. Cadre-la entière, bien nette, dans le rectangle.');
-  }
-
-  onStatus?.(`Carte ${chosen.code}…`);
-  const lang = detectLang(text);
-  const variants = await fetchPrintedCard(chosen.code);
-  const catalog = findCardsByPrintedCode(chosen.code);
-  const variant = pickVariant(variants, chosen.id);
+  onStatus?.(`${code} · variante…`);
+  const variants = await fetchPrintedCard(code);
+  const catalog = findCardsByPrintedCode(code);
+  const photoPrint = fingerprint(cropArtWindow(card));
+  const visual = await pickClosestArt(
+    photoPrint,
+    variants.map((item) => ({
+      ...item,
+      imageUrl: item.card_image ? catalogThumb(officialCardImage(item.card_image, 180), 180) : undefined,
+    })),
+  );
+  const variant =
+    visual && visual.distance < 0.45
+      ? pickVariant(variants, visual.item.card_image_id)
+      : pickVariant(variants);
   const usd = Number(variant.market_price ?? variant.inventory_price ?? 0);
+  const lang = detectLang(text);
   const quote = await quoteForLang(usd, lang);
   const matched =
-    catalog.find((card) => card.id.toUpperCase() === chosen.id.toUpperCase()) ??
-    catalog.find((card) => card.id.toUpperCase() === (variant.card_image_id ?? '').toUpperCase()) ??
-    catalog[0];
+    catalog.find((item) => item.id.toUpperCase() === (variant.card_image_id ?? '').toUpperCase()) ?? catalog[0];
 
   return {
-    code: chosen.code,
-    name: (matched?.name ?? chosen.name ?? variant.card_name).replace(/\s*\(\d+\)\s*/g, ' ').trim(),
+    code,
+    name: (matched?.name ?? variant.card_name).replace(/\s*\(\d+\)\s*/g, ' ').trim(),
     lang,
     langLabel: LANG_COPY[lang].label,
     priceLabel: formatMoney(quote.amount, quote.currency),
     market: quote.market,
     usd: quote.usd,
     variant:
-      chosen.variantLabel ||
+      matched?.variantLabel ||
       (/_p/i.test(variant.card_image_id ?? '') || /parallel/i.test(variant.card_name) ? 'Alternate Art' : 'Base'),
-    imageUrl: variant.card_image ? officialCardImage(variant.card_image, 500) : matched?.imageUrl ?? chosen.imageUrl,
+    imageUrl: variant.card_image ? officialCardImage(variant.card_image, 500) : matched?.imageUrl,
     card: matched,
   };
 }

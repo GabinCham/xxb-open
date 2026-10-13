@@ -42,6 +42,25 @@ export async function fetchPrintedCard(code: string): Promise<ApiCard[]> {
   return payload;
 }
 
+export async function searchSetCards(query: {
+  name?: string;
+  power?: number;
+  cost?: number;
+  color?: string;
+  type?: string;
+}): Promise<ApiCard[]> {
+  const params = new URLSearchParams();
+  if (query.name) params.set('card_name', query.name);
+  if (query.power != null) params.set('card_power', String(query.power));
+  if (query.cost != null) params.set('card_cost', String(query.cost));
+  if (query.color) params.set('card_color', query.color);
+  if (query.type) params.set('card_type', query.type);
+  const response = await fetch(`https://optcgapi.com/api/sets/filtered/?${params}`);
+  if (!response.ok) return [];
+  const payload = (await response.json()) as ApiCard[] | { error?: string };
+  return Array.isArray(payload) ? payload : [];
+}
+
 async function fxRates() {
   if (Date.now() - FX_CACHE.at < 1000 * 60 * 60 && FX_CACHE.eur && FX_CACHE.jpy) return FX_CACHE;
   const response = await fetch('https://api.frankfurter.app/latest?from=USD&to=EUR,JPY');

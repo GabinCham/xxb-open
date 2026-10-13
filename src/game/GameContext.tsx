@@ -3,7 +3,6 @@ import { createContext, useContext, useEffect, useMemo, useState, type ReactNode
 
 import { addPulls, type OwnedCard } from '../data/collection';
 import { loadCatalog } from '../data/catalog';
-import { ensureVisualIndex } from '../data/visualIndex';
 import { openBooster } from '../data/openPack';
 import { BOOSTER_SETS } from '../data/sets';
 import type { BoosterSet, PulledCard } from '../data/types';
@@ -76,9 +75,7 @@ export function GameProvider({ children }: { children: ReactNode }) {
         const parsed = JSON.parse(value) as (string | null)[];
         if (Array.isArray(parsed)) setBinderSlots(withTrailingPage(parsed));
       }),
-      loadCatalog().then(() => {
-        ensureVisualIndex().catch(() => {});
-      }),
+      loadCatalog(),
     ]).finally(() => setReady(true));
   }, []);
 

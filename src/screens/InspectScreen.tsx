@@ -1,14 +1,14 @@
 import * as Haptics from 'expo-haptics';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useState } from 'react';
-import { Platform, Pressable, StyleSheet, Text } from 'react-native';
+import { Image, Platform, Pressable, StyleSheet, Text, View } from 'react-native';
 import Animated, { Easing, useAnimatedStyle, useSharedValue, withSequence, withTiming } from 'react-native-reanimated';
 
-import { BoosterPack } from '../components/BoosterPack';
+import { packTextureModule } from '../data/packTextures';
 import { useGame } from '../game/GameContext';
 import { colors } from '../theme';
 
-export function InspectScreen() {
+export function InspectScreen({ overlay = false }: { overlay?: boolean }) {
   const { selectedSet, startReveal, goHome } = useGame();
   const [opening, setOpening] = useState(false);
   const scale = useSharedValue(1);
@@ -44,9 +44,10 @@ export function InspectScreen() {
   }));
 
   if (!selectedSet) return null;
+  const packImage = packTextureModule(selectedSet.id);
 
-  return (
-    <LinearGradient colors={['#10060a', colors.bg]} style={styles.fill}>
+  const content = (
+    <>
       <Pressable onPress={goHome} style={styles.back}>
         <Text style={styles.backText}>← Changer de booster</Text>
       </Pressable>
@@ -58,21 +59,26 @@ export function InspectScreen() {
       <Pressable onPress={open} style={styles.stage}>
         <Animated.View style={[styles.flash, flashStyle]} />
         <Animated.View style={packStyle}>
-          <BoosterPack set={selectedSet} size="hero" />
+          {packImage ? <Image source={packImage} resizeMode="contain" style={styles.heroPack} /> : null}
         </Animated.View>
       </Pressable>
-    </LinearGradient>
+    </>
   );
+
+  if (overlay) return <View style={[styles.fill, styles.overlay]}>{content}</View>;
+  return <LinearGradient colors={['#10060a', colors.bg]} style={styles.fill}>{content}</LinearGradient>;
 }
 
 const styles = StyleSheet.create({
   fill: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 24 },
+  overlay: { backgroundColor: 'rgba(8, 4, 5, 0.18)' },
   back: { position: 'absolute', top: 56, left: 20 },
   backText: { color: colors.muted, fontSize: 15 },
   kicker: { color: colors.gold, letterSpacing: 3, fontWeight: '800' },
   title: { color: colors.white, fontSize: 28, fontWeight: '900', marginTop: 8, textAlign: 'center' },
   lead: { color: colors.muted, marginTop: 8, marginBottom: 28, textAlign: 'center' },
   stage: { alignItems: 'center', justifyContent: 'center', minHeight: 420, minWidth: 260 },
+  heroPack: { width: 220, height: 340 },
   flash: {
     position: 'absolute',
     width: 180,
