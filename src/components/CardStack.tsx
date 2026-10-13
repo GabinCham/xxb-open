@@ -21,6 +21,7 @@ import { TradingCard } from './TradingCard';
 type Props = {
   cards: PulledCard[];
   onDismissTop: () => void;
+  onLastBinder: () => void;
 };
 
 function buzz() {
@@ -121,10 +122,11 @@ function StackCard({
   );
 }
 
-export function CardStack({ cards, onDismissTop }: Props) {
+export function CardStack({ cards, onDismissTop, onLastBinder }: Props) {
   const visible = cards.slice(0, 4);
   const top = cards[0];
   const inspectingHit = Boolean(top && isHitCard(top));
+  const lastCard = cards.length === 1;
 
   return (
     <View style={styles.wrap}>
@@ -139,13 +141,21 @@ export function CardStack({ cards, onDismissTop }: Props) {
           .reverse()}
       </View>
       <Text style={styles.hint}>
-        {inspectingHit
+        {lastCard
+          ? 'Dernière carte : choisis où continuer.'
+          : inspectingHit
           ? 'Fais tourner la carte avec le doigt pour voir le reflet'
           : 'Glisse avec le doigt pour faire partir la carte'}
       </Text>
-      <Pressable onPress={onDismissTop}>
-        <Text style={styles.alt}>{inspectingHit ? 'Continuer' : 'Ou appuie ici pour envoyer la carte du dessus'}</Text>
-      </Pressable>
+      {lastCard ? (
+        <Pressable onPress={onLastBinder} style={styles.binderButton}>
+          <Text style={styles.binderButtonText}>Voir le classeur</Text>
+        </Pressable>
+      ) : (
+        <Pressable onPress={onDismissTop}>
+          <Text style={styles.alt}>{inspectingHit ? 'Continuer' : 'Ou appuie ici pour envoyer la carte du dessus'}</Text>
+        </Pressable>
+      )}
     </View>
   );
 }
@@ -164,4 +174,6 @@ const styles = StyleSheet.create({
   },
   hint: { color: colors.muted, fontSize: 14, textAlign: 'center', paddingHorizontal: 24 },
   alt: { color: colors.goldDim, fontSize: 13, textDecorationLine: 'underline' },
+  binderButton: { borderColor: colors.gold, borderWidth: 1, borderRadius: 999, paddingHorizontal: 20, paddingVertical: 11 },
+  binderButtonText: { color: colors.gold, fontSize: 14, fontWeight: '800' },
 });

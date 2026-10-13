@@ -37,9 +37,9 @@ function pagesFromSlots(slots: (string | null)[], collection: OwnedCard[]) {
   return pages;
 }
 
-function Pocket({ card, onPress }: { card?: OwnedCard; onPress: () => void }) {
+function Pocket({ card, onPress, featured = false }: { card?: OwnedCard; onPress: () => void; featured?: boolean }) {
   return (
-    <Pressable onPress={onPress} style={styles.pocket}>
+    <Pressable onPress={onPress} style={[styles.pocket, featured && styles.featuredPocket]}>
       {card ? <TradingCard card={{ ...card, pullId: card.id }} compact count={card.count} /> : <Text style={styles.empty}>+</Text>}
     </Pressable>
   );
@@ -58,7 +58,7 @@ function PageFace({
   return (
     <View style={styles.pageFace}>
       <View style={styles.row}>
-        <Pocket card={slots[0]} onPress={() => onPick(pageIndex * SLOTS)} />
+        <Pocket card={slots[0]} featured={pageIndex === 0} onPress={() => onPick(pageIndex * SLOTS)} />
         <Pocket card={slots[1]} onPress={() => onPick(pageIndex * SLOTS + 1)} />
       </View>
       <View style={styles.row}>
@@ -149,6 +149,34 @@ export function BinderScreen() {
   const peekPage = peekW >= 28 ? pages[index + 2] : undefined;
 
   const syncIndex = (next: number) => setIndex(next);
+
+  const turnNextPage = () => {
+    if (busy.value || current.value >= lastLeft.value) return;
+    busy.value = 1;
+    mode.value = 1;
+    turn.value = withTiming(-180, { duration: 320, easing: Easing.inOut(Easing.cubic) }, (finished) => {
+      if (!finished) return;
+      current.value += 1;
+      turn.value = 0;
+      mode.value = 0;
+      busy.value = 0;
+      runOnJS(syncIndex)(current.value);
+    });
+  };
+
+  const turnPreviousPage = () => {
+    if (busy.value || current.value <= 0) return;
+    busy.value = 1;
+    mode.value = 2;
+    turn.value = withTiming(180, { duration: 320, easing: Easing.inOut(Easing.cubic) }, (finished) => {
+      if (!finished) return;
+      current.value -= 1;
+      turn.value = 0;
+      mode.value = 0;
+      busy.value = 0;
+      runOnJS(syncIndex)(current.value);
+    });
+  };
 
   const pan = Gesture.Pan()
     .activeOffsetX([-18, 18])
@@ -280,6 +308,24 @@ export function BinderScreen() {
           </View>
         </View>
       </GestureDetector>
+      <View style={styles.pageControls}>
+        <Pressable
+          accessibilityLabel="Page précédente"
+          disabled={index === 0}
+          onPress={turnPreviousPage}
+          style={({ pressed }) => [styles.pageButton, index === 0 && styles.pageButtonDisabled, pressed && styles.pageButtonPressed]}
+        >
+          <Text style={styles.pageButtonText}>← Précédente</Text>
+        </Pressable>
+        <Pressable
+          accessibilityLabel="Page suivante"
+          disabled={index >= pages.length - 1}
+          onPress={turnNextPage}
+          style={({ pressed }) => [styles.pageButton, index >= pages.length - 1 && styles.pageButtonDisabled, pressed && styles.pageButtonPressed]}
+        >
+          <Text style={styles.pageButtonText}>Suivante →</Text>
+        </Pressable>
+      </View>
     </LinearGradient>
   );
 }
@@ -302,6 +348,11 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginBottom: TAB_BAR_HEIGHT,
   },
+  pageControls: { position: 'absolute', bottom: 14, left: 16, right: 16, flexDirection: 'row', justifyContent: 'space-between', maxWidth: 520, alignSelf: 'center', width: '100%' },
+  pageButton: { minWidth: 132, alignItems: 'center', backgroundColor: '#2f1d10', borderColor: '#c99a48', borderWidth: 1, borderRadius: 999, paddingHorizontal: 16, paddingVertical: 11 },
+  pageButtonText: { color: '#f4d895', fontWeight: '800', fontSize: 13 },
+  pageButtonDisabled: { opacity: 0.34 },
+  pageButtonPressed: { opacity: 0.72, transform: [{ scale: 0.97 }] },
   binder: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -370,5 +421,6 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     overflow: 'hidden',
   },
+  featuredPocket: { borderColor: '#f3c66d', borderWidth: 3, shadowColor: '#e8c36a', shadowOpacity: 0.8, shadowRadius: 10, elevation: 8 },
   empty: { color: '#8a7a62', fontSize: 26, fontWeight: '300' },
 });

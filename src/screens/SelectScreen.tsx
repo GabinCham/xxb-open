@@ -1,23 +1,27 @@
-import { Image, Pressable, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
+import { useMemo, useRef, useState } from 'react';
+import { Animated, Image, Pressable, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
 
-import { BOOSTER_SETS } from '../data/sets';
-import { useGame } from '../game/GameContext';
+import { BOOSTER_SETS, boosterPrice, dailyBoosterIds } from '../data/sets';
+import { packTextureModule } from '../data/packTextures';
+import { TradingCard } from '../components/TradingCard';
+import { OP13_DISPLAY_PRICE, useGame } from '../game/GameContext';
 
 const SHOP_BACKGROUND = require('../../assets/grand-line-tcg-shop.png');
 const BINDER_IMAGE = require('../../assets/tcg-binder.png');
-
-const FEATURED_BOOSTERS = [
-  { id: 'op17', image: require('../../assets/packs/op17.jpg') },
-  { id: 'op13-hits', image: require('../../assets/packs/op13.jpg') },
-  { id: 'eb01', image: require('../../assets/packs/eb01.jpg') },
-] as const;
+const METAL_SHUTTER = require('../../assets/shop-metal-shutter.png');
+const BERRY_COIN = require('../../assets/berry-coin.png');
+const OP13_DISPLAY_IMAGE = require('../../assets/op13-display.png');
 
 type Props = { blurred?: boolean };
 
 export function SelectScreen({ blurred = false }: Props) {
-  const { remaining, selectSet, grantBooster, setTab } = useGame();
+  const { coins, collection, binderSlots, selectSet, selectOp13Display, setTab } = useGame();
   const { width, height } = useWindowDimensions();
-  const empty = remaining <= 0;
+  const [shutterVisible, setShutterVisible] = useState(false);
+  const [shutterMessage, setShutterMessage] = useState('');
+  const shutter = useRef(new Animated.Value(0)).current;
+  const featuredBoosterIds = useMemo(() => dailyBoosterIds(), []);
+  const featuredCard = binderSlots[0] ? collection.find((card) => card.id === binderSlots[0]) : undefined;
   const shopWidth = Math.min(width, height * (2 / 3));
   const shelfStyle = {
     left: (width - shopWidth) / 2 + shopWidth * 0.11,
@@ -31,6 +35,22 @@ export function SelectScreen({ blurred = false }: Props) {
     width: shopWidth * 0.34,
     height: height * 0.39,
   };
+  const displayStyle = {
+    // Centered inside the lower shelf, between its acrylic dividers.
+    left: (width - shopWidth) / 2 + shopWidth * 0.03,
+    top: height * 0.32,
+    width: shopWidth * 0.46,
+    height: height * 0.14,
+  };
+  const closeShop = () => {
+    setShutterMessage('Tu n’as pas assez de Berrys pour l’instant.');
+    setShutterVisible(true);
+    Animated.sequence([
+      Animated.timing(shutter, { toValue: 1, duration: 420, useNativeDriver: true }),
+      Animated.delay(1350),
+      Animated.timing(shutter, { toValue: 0, duration: 480, useNativeDriver: true }),
+    ]).start(() => setShutterVisible(false));
+  };
 
   return (
     <View style={styles.fill}>
@@ -38,22 +58,55 @@ export function SelectScreen({ blurred = false }: Props) {
       <View style={[styles.fill, blurred && styles.nonInteractive]}>
         {blurred ? <View style={styles.dim} /> : null}
         <View style={[styles.shelf, shelfStyle]}>
-          {FEATURED_BOOSTERS.map(({ id, image }) => {
+          {featuredBoosterIds.map((id) => {
             const set = BOOSTER_SETS.find((candidate) => candidate.id === id);
-            if (!set) return null;
+            const image = packTextureModule(id);
+            if (!set || !image) return null;
             return (
               <Pressable
                 key={id}
                 accessibilityLabel={`Ouvrir ${set.code}`}
-                disabled={empty}
-                onPress={() => selectSet(id)}
-                style={({ pressed }) => [styles.boosterButton, pressed && !empty && styles.pressed, empty && styles.empty]}
+                onPress={() => {
+                  if (coins < boosterPrice(id)) {
+                closeShop();
+                    return;
+                  }
+                  selectSet(id);
+                }}
+                style={({ pressed }) => [styles.boosterButton, pressed && coins >= boosterPrice(id) && styles.pressed, coins < boosterPrice(id) && styles.empty]}
               >
                 <Image source={image} resizeMode="contain" style={styles.booster} />
+                <View style={styles.price}>
+                  <Image source={BERRY_COIN} style={styles.priceCoin} />
+                  <Text style={styles.priceText}>{boosterPrice(id)}</Text>
+                </View>
               </Pressable>
             );
           })}
         </View>
+        {!blurred ? (
+          <Pressable
+            accessibilityLabel="Ouvrir une display OP-13 de 24 boosters"
+            onPress={() => {
+              if (coins < OP13_DISPLAY_PRICE) {
+                closeShop();
+                return;
+              }
+              selectOp13Display();
+            }}
+            style={({ pressed }) => [styles.displayButton, displayStyle, pressed && coins >= OP13_DISPLAY_PRICE && styles.pressed, coins < OP13_DISPLAY_PRICE && styles.displayEmpty]}
+          >
+            <Image source={OP13_DISPLAY_IMAGE} resizeMode="contain" style={styles.displayImage} />
+            <View style={styles.displayFooter}>
+              <Text style={styles.displayTitle}>DISPLAY OP-13</Text>
+              <Text style={styles.displaySubtitle}>24 boosters · 3 HITS garantis</Text>
+              <View style={styles.displayPrice}>
+                <Image source={BERRY_COIN} style={styles.displayCoin} />
+                <Text style={styles.displayPriceText}>{OP13_DISPLAY_PRICE}</Text>
+              </View>
+            </View>
+          </Pressable>
+        ) : null}
         {!blurred ? (
           <Pressable
             accessibilityLabel="Ouvrir le classeur"
@@ -63,12 +116,32 @@ export function SelectScreen({ blurred = false }: Props) {
             <Image source={BINDER_IMAGE} resizeMode="contain" style={styles.binderImage} />
           </Pressable>
         ) : null}
-        {!blurred && empty ? (
-          <Pressable style={styles.refill} onPress={grantBooster}>
-            <Text style={styles.refillText}>Recevoir un booster</Text>
-          </Pressable>
+        {!blurred && featuredCard ? (
+          <View pointerEvents="none" style={styles.featuredCardSpot}>
+            <View style={styles.cardPedestal}>
+              <Text style={styles.favoriteHeart}>♥</Text>
+            </View>
+            <View style={styles.featuredCardTilt}>
+              <TradingCard card={{ ...featuredCard, pullId: `featured-${featuredCard.id}` }} compact />
+            </View>
+          </View>
         ) : null}
       </View>
+      {shutterVisible ? (
+        <Animated.View
+          pointerEvents="auto"
+          style={[
+            styles.shutter,
+            { transform: [{ translateY: shutter.interpolate({ inputRange: [0, 1], outputRange: [-height, 0] }) }] },
+          ]}
+        >
+          <Image source={METAL_SHUTTER} resizeMode="repeat" style={styles.shutterGrid} />
+          <View style={styles.shutterMessage}>
+            <Text style={styles.shutterTitle}>BOUTIQUE FERMÉE</Text>
+            <Text style={styles.shutterText}>{shutterMessage}</Text>
+          </View>
+        </Animated.View>
+      ) : null}
     </View>
   );
 }
@@ -87,13 +160,30 @@ const styles = StyleSheet.create({
   },
   boosterButton: { width: '25%', height: '94%', alignItems: 'center', justifyContent: 'flex-end' },
   booster: { width: '100%', height: '88%' },
+  displayButton: { position: 'absolute', alignItems: 'center', justifyContent: 'center' },
+  displayImage: { width: '100%', height: '76%', opacity: 1 },
+  displayFooter: { position: 'absolute', alignSelf: 'center', bottom: 0, alignItems: 'center', backgroundColor: 'rgba(30, 12, 7, 0.88)', borderRadius: 7, paddingHorizontal: 6, paddingVertical: 3 },
+  displayTitle: { color: '#ffe2a0', fontSize: 9, fontWeight: '900', textAlign: 'center' },
+  displaySubtitle: { color: '#f3c66d', fontSize: 7, fontWeight: '700', textAlign: 'center' },
+  displayPrice: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#201408', borderColor: '#f3c66d', borderWidth: 1, borderRadius: 999, marginTop: 3, paddingHorizontal: 6, paddingVertical: 3 },
+  displayCoin: { width: 13, height: 13, marginRight: 3 },
+  displayPriceText: { color: '#ffe2a0', fontWeight: '900', fontSize: 11 },
   pressed: { transform: [{ scale: 0.94 }] },
   binderButton: { position: 'absolute', borderRadius: 20 },
   binderImage: { width: '100%', height: '100%' },
   binderPressed: { backgroundColor: 'rgba(255, 211, 112, 0.12)' },
+  featuredCardSpot: { position: 'absolute', right: 10, bottom: 8, width: 116, height: 165, alignItems: 'center', justifyContent: 'flex-end', zIndex: 12 },
+  cardPedestal: { position: 'absolute', bottom: 3, width: 95, height: 18, borderRadius: 12, backgroundColor: '#4b260e', borderWidth: 2, borderColor: '#d39b42', alignItems: 'center', justifyContent: 'center', shadowColor: '#000', shadowOpacity: 0.65, shadowRadius: 8, elevation: 9 },
+  favoriteHeart: { color: '#ff6b75', fontSize: 14, fontWeight: '900', lineHeight: 15 },
+  featuredCardTilt: { marginBottom: 2, transform: [{ perspective: 700 }, { rotateX: '-18deg' }, { rotateZ: '6deg' }, { scale: 0.72 }], shadowColor: '#000', shadowOpacity: 0.7, shadowRadius: 10, elevation: 10 },
   empty: { opacity: 0.38 },
-  refill: {
-    position: 'absolute', top: '45%', left: '12%', backgroundColor: '#f3c66d', borderRadius: 999, paddingHorizontal: 14, paddingVertical: 9,
-  },
-  refillText: { color: '#301506', fontWeight: '900', fontSize: 12 },
+  displayEmpty: { opacity: 0.78 },
+  price: { position: 'absolute', bottom: 0, flexDirection: 'row', alignItems: 'center', backgroundColor: '#201408', borderColor: '#f3c66d', borderWidth: 1, borderRadius: 999, paddingHorizontal: 6, paddingVertical: 2 },
+  priceCoin: { width: 12, height: 12, marginRight: 3 },
+  priceText: { color: '#ffe2a0', fontWeight: '900', fontSize: 10 },
+  shutter: { ...StyleSheet.absoluteFill, overflow: 'hidden', alignItems: 'center', justifyContent: 'center' },
+  shutterGrid: { ...StyleSheet.absoluteFill, width: '100%', height: '100%', opacity: 0.78 },
+  shutterMessage: { alignItems: 'center', backgroundColor: 'rgba(20, 13, 6, 0.92)', borderWidth: 2, borderColor: '#f3c66d', borderRadius: 16, paddingHorizontal: 24, paddingVertical: 18 },
+  shutterTitle: { color: '#ffe2a0', fontWeight: '900', fontSize: 20, letterSpacing: 1.5 },
+  shutterText: { color: '#fff2d1', fontSize: 16, fontWeight: '700', marginTop: 7 },
 });

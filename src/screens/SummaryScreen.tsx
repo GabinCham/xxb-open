@@ -16,11 +16,14 @@ function tone(card: { rarity: string; variantLabel?: string }) {
 }
 
 export function SummaryScreen() {
-  const { pulls, selectedSet, goHome, goLibrary } = useGame();
+  const { pulls, selectedSet, goHome, setTab, continueDisplay, displayPacksRemaining } = useGame();
   const hits = pulls.map(hitLabel).filter((label): label is string => Boolean(label));
 
   return (
     <LinearGradient colors={['#12080c', colors.bg]} style={styles.fill}>
+      <Pressable style={styles.shopBack} onPress={goHome}>
+        <Text style={styles.shopBackText}>← Boutique</Text>
+      </Pressable>
       <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
         <Text style={styles.kicker}>{selectedSet?.code} · OUVERT</Text>
         <Text style={styles.title}>Tes cartes</Text>
@@ -37,11 +40,13 @@ export function SummaryScreen() {
           ))}
         </View>
 
-        <Pressable style={styles.cta} onPress={goHome}>
-          <Text style={styles.ctaText}>Retour aux boosters</Text>
-        </Pressable>
-        <Pressable style={styles.secondary} onPress={goLibrary}>
-          <Text style={styles.secondaryText}>Voir la bibliothèque</Text>
+        {displayPacksRemaining ? (
+          <Pressable style={styles.cta} onPress={continueDisplay}>
+            <Text style={styles.ctaText}>{displayPacksRemaining > 1 ? `Ouvrir le booster suivant (${displayPacksRemaining - 1})` : 'Terminer la display'}</Text>
+          </Pressable>
+        ) : null}
+        <Pressable style={styles.binderButton} onPress={() => setTab('binder')}>
+          <Text style={styles.binderButtonText}>Voir le classeur</Text>
         </Pressable>
       </ScrollView>
     </LinearGradient>
@@ -51,7 +56,7 @@ export function SummaryScreen() {
 const styles = StyleSheet.create({
   fill: { flex: 1 },
   content: {
-    paddingTop: 64,
+    paddingTop: 78,
     paddingBottom: 48,
     paddingHorizontal: 16,
     maxWidth: 760,
@@ -73,6 +78,8 @@ const styles = StyleSheet.create({
     borderRadius: 999,
   },
   ctaText: { color: '#1a1208', fontWeight: '800', fontSize: 16 },
-  secondary: { marginTop: 12, alignSelf: 'center', paddingVertical: 10 },
-  secondaryText: { color: colors.gold, fontWeight: '700', fontSize: 15 },
+  shopBack: { position: 'absolute', top: 24, left: 18, zIndex: 2, borderColor: '#c99a48', borderWidth: 1, borderRadius: 999, paddingHorizontal: 12, paddingVertical: 8, backgroundColor: 'rgba(23, 13, 8, 0.9)' },
+  shopBackText: { color: '#f4d895', fontSize: 13, fontWeight: '800' },
+  binderButton: { marginTop: 14, alignSelf: 'center', borderColor: colors.gold, borderWidth: 1, borderRadius: 999, paddingHorizontal: 22, paddingVertical: 12 },
+  binderButtonText: { color: colors.gold, fontWeight: '800', fontSize: 15 },
 });

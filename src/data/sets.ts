@@ -1,5 +1,53 @@
 import type { BoosterSet } from './types';
 
+export const BOOSTER_PRICES: Record<string, number> = {
+  op01: 9,
+  op02: 5,
+  op03: 5,
+  op04: 5,
+  op05: 12,
+  op06: 5,
+  op07: 5,
+  op08: 6,
+  op09: 11,
+  op10: 8,
+  op11: 11,
+  op12: 8,
+  op13: 9,
+  'op13-hits': 90,
+  op14: 7,
+  op15: 7,
+  op16: 7,
+  op17: 8,
+  eb01: 6,
+};
+
+export function boosterPrice(setId: string): number {
+  return BOOSTER_PRICES[setId] ?? 10;
+}
+
+function daySeed(day: string) {
+  return [...day].reduce((seed, char) => (seed * 31 + char.charCodeAt(0)) >>> 0, 2166136261);
+}
+
+/** Three daily featured packs. OP-13 or OP-17 is guaranteed; both appear on one day out of four. */
+export function dailyBoosterIds(date = new Date()): string[] {
+  const day = `${date.getFullYear()}-${date.getMonth() + 1}-${date.getDate()}`;
+  let seed = daySeed(day);
+  const next = () => {
+    seed = (seed * 1664525 + 1013904223) >>> 0;
+    return seed;
+  };
+  const featured = [next() % 2 === 0 ? 'op13' : 'op17'];
+  if (next() % 4 === 0) featured.push(featured[0] === 'op13' ? 'op17' : 'op13');
+
+  const candidates = BOOSTER_SETS.map((set) => set.id).filter((id) => !featured.includes(id));
+  while (featured.length < 3 && candidates.length) {
+    featured.push(candidates.splice(next() % candidates.length, 1)[0]);
+  }
+  return featured;
+}
+
 export const BOOSTER_SETS: BoosterSet[] = [
   {
     id: 'op01',
