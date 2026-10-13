@@ -37,7 +37,7 @@ const PAGE = 4;
 const COINS_PER_INTERVAL = 60;
 const COIN_INTERVAL_MS = 15 * 60 * 1000;
 const STARTING_COINS = 60;
-const COINS_VERSION = '2';
+const COINS_VERSION = '3';
 export const OP13_DISPLAY_PRICE = 1500;
 export const OP13_DISPLAY_PACKS = 24;
 const OP13_DISPLAY_HITS = 3;
@@ -185,21 +185,25 @@ export function GameProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     Promise.all([
-      Promise.all([AsyncStorage.getItem(COINS_KEY), AsyncStorage.getItem(COINS_LAST_EARNED_AT_KEY), AsyncStorage.getItem(COINS_VERSION_KEY)]).then(([storedCoins, storedAt, version]) => {
+      AsyncStorage.getItem(COINS_VERSION_KEY).then(async (version) => {
+        if (version !== COINS_VERSION) {
+          await AsyncStorage.multiRemove(GAME_KEYS);
+        }
+        const [storedCoins, storedAt] = await Promise.all([
+          AsyncStorage.getItem(COINS_KEY),
+          AsyncStorage.getItem(COINS_LAST_EARNED_AT_KEY),
+        ]);
         const savedCoins = storedCoins == null ? Number.NaN : Number(storedCoins);
         const savedAt = storedAt == null ? Number.NaN : Number(storedAt);
-        const isNewEconomy = version !== COINS_VERSION;
-        const loadedCoins = isNewEconomy || !Number.isFinite(savedCoins) ? STARTING_COINS : savedCoins;
+        const loadedCoins = Number.isFinite(savedCoins) ? savedCoins : STARTING_COINS;
         const baseCoins = DEV_GRANT_BERRIES ? Math.max(loadedCoins, DEV_GRANT_BERRIES) : loadedCoins;
-        const baseAt = isNewEconomy || !Number.isFinite(savedAt) || savedAt <= 0 ? Date.now() : savedAt;
-        // A reward is granted once per qualifying app launch. Time spent away
-        // from the app never stacks multiple rewards.
-        const earned = !isNewEconomy && Date.now() - baseAt >= COIN_INTERVAL_MS ? 1 : 0;
+        const baseAt = Number.isFinite(savedAt) && savedAt > 0 ? savedAt : Date.now();
+        const earned = Date.now() - baseAt >= COIN_INTERVAL_MS ? 1 : 0;
         const nextCoins = baseCoins + earned * COINS_PER_INTERVAL;
         const nextAt = earned ? Date.now() : baseAt;
         setCoins(nextCoins);
         setLastCoinEarnedAt(nextAt);
-        if (earned || isNewEconomy || storedCoins == null || storedAt == null) {
+        if (earned || version !== COINS_VERSION || storedCoins == null || storedAt == null) {
           AsyncStorage.multiSet([[COINS_KEY, String(nextCoins)], [COINS_LAST_EARNED_AT_KEY, String(nextAt)], [COINS_VERSION_KEY, COINS_VERSION]]).catch(() => {});
         }
       }),
@@ -301,21 +305,23 @@ export function GameProvider({ children }: { children: ReactNode }) {
       ]).catch(() => {});
 
       remoteSynced.current = true;
-      const { error: saveError } = await supabase.from('booster_player_state').upsert({
-        user_id: user.id,
-        coins: nextCoins,
-        last_coin_earned_at: new Date(nextAt).toISOString(),
-        collection: nextCollection,
-        binder_slots: nextBinder,
-        boosters_opened: nextStats.boostersOpened,
-        hits_pulled: nextStats.hitsPulled,
-        berries_spent: nextStats.berriesSpent,
-        display_progress: nextDisplay,
-        welcome_gift: nextWelcomeGift,
-        updated_at: new Date().toISOString(),
-      }, { onConflict: 'user_id' });
-      if (saveError && error) {
-        console.warn('Sauvegarde compte impossible', saveError.message);
+      if (!hasRemote || earnLoginBonus) {
+        const { error: saveError } = await supabase.from('booster_player_state').upsert({
+          user_id: user.id,
+          coins: nextCoins,
+          last_coin_earned_at: new Date(nextAt).toISOString(),
+          collection: nextCollection,
+          binder_slots: nextBinder,
+          boosters_opened: nextStats.boostersOpened,
+          hits_pulled: nextStats.hitsPulled,
+          berries_spent: nextStats.berriesSpent,
+          display_progress: nextDisplay,
+          welcome_gift: nextWelcomeGift,
+          updated_at: new Date().toISOString(),
+        }, { onConflict: 'user_id' });
+        if (saveError && error) {
+          console.warn('Sauvegarde compte impossible', saveError.message);
+        }
       }
       if (mounted) setRemoteReady(true);
     };
@@ -440,7 +446,8 @@ export function GameProvider({ children }: { children: ReactNode }) {
   };
 
   useEffect(() => {
-    if (!localReady || !remoteReady || clock - lastCoinEarnedAt < COIN_INTERVAL_MS) return;
+    if (!localReady || !remoteReady || (user && !remoteSynced.current)) return;
+    if (clock - lastCoinEarnedAt < COIN_INTERVAL_MS) return;
     const awardedAt = Date.now();
     const nextCoins = coins + COINS_PER_INTERVAL;
     setCoins(nextCoins);
@@ -451,7 +458,7 @@ export function GameProvider({ children }: { children: ReactNode }) {
       [COINS_VERSION_KEY, COINS_VERSION],
     ]).catch(() => {});
     persistRemote({ coins: nextCoins, lastCoinEarnedAt: awardedAt });
-  }, [localReady, remoteReady, clock, lastCoinEarnedAt, coins]);
+  }, [localReady, remoteReady, user, clock, lastCoinEarnedAt, coins]);
 
   const value = useMemo<GameContextValue>(
     () => ({
