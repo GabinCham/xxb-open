@@ -2,9 +2,11 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { createContext, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 
 import { useAuth } from '../auth/AuthContext';
+import { roundBerries } from '../data/berries';
 import { addPulls, type OwnedCard } from '../data/collection';
 import { loadCatalog } from '../data/catalog';
 import { openBooster } from '../data/openPack';
+import { removeCopies, sellableCount, sellPrice } from '../data/sell';
 import { BOOSTER_SETS, boosterPrice } from '../data/sets';
 import type { BoosterSet, PulledCard } from '../data/types';
 import { supabase } from '../lib/supabase';
@@ -82,7 +84,10 @@ type GameContextValue = {
   collection: OwnedCard[];
   binderSlots: (string | null)[];
   pickSlot: number | null;
+  selling: boolean;
   displayPacksRemaining: number;
+  startSelling: () => void;
+  sellCards: (cardIds: string[]) => number;
   selectSet: (id: string) => void;
   selectOp13Display: () => void;
   startReveal: () => void;
@@ -112,6 +117,7 @@ export function GameProvider({ children }: { children: ReactNode }) {
   const [collection, setCollection] = useState<OwnedCard[]>([]);
   const [binderSlots, setBinderSlots] = useState<(string | null)[]>(emptyPage());
   const [pickSlot, setPickSlot] = useState<number | null>(null);
+  const [selling, setSelling] = useState(false);
   const [displayQueue, setDisplayQueue] = useState<string[]>([]);
   const remoteSynced = useRef(false);
   const snapshot = useRef<PlayerSnapshot>({
@@ -244,9 +250,37 @@ export function GameProvider({ children }: { children: ReactNode }) {
   };
 
   const persistCoins = (next: number) => {
-    setCoins(next);
-    AsyncStorage.setItem(COINS_KEY, String(next)).catch(() => {});
-    persistRemote({ coins: next });
+    const rounded = roundBerries(next);
+    setCoins(rounded);
+    AsyncStorage.setItem(COINS_KEY, String(rounded)).catch(() => {});
+    persistRemote({ coins: rounded });
+  };
+
+  const reservedBinderCopies = (slots: (string | null)[]) => {
+    const reserved = new Map<string, number>();
+    for (const id of slots) {
+      if (!id) continue;
+      reserved.set(id, 1);
+    }
+    return reserved;
+  };
+
+  const sellFromCollection = (ids: string[]) => {
+    const wanted = new Set(ids);
+    const reserved = reservedBinderCopies(binderSlots);
+    const amounts = new Map<string, number>();
+    let payout = 0;
+    for (const card of collection) {
+      if (!wanted.has(card.id)) continue;
+      const take = sellableCount(card, reserved.get(card.id) ?? 0);
+      if (take <= 0) continue;
+      amounts.set(card.id, take);
+      payout += take * sellPrice(card);
+    }
+    if (amounts.size === 0) return 0;
+    persistCollection(removeCopies(collection, amounts));
+    persistCoins(coins + payout);
+    return roundBerries(payout);
   };
 
   const persistCollection = (next: OwnedCard[]) => {
@@ -291,7 +325,15 @@ export function GameProvider({ children }: { children: ReactNode }) {
       collection,
       binderSlots,
       pickSlot,
+      selling,
       displayPacksRemaining: displayQueue.length,
+      startSelling: () => {
+        setSelling(true);
+        setPickSlot(null);
+        setPhase('select');
+        setActiveTab('library');
+      },
+      sellCards: (cardIds) => sellFromCollection(cardIds),
       selectSet: (id) => {
         const set = BOOSTER_SETS.find((item) => item.id === id);
         if (!set || coins < boosterPrice(id)) return;
@@ -299,6 +341,7 @@ export function GameProvider({ children }: { children: ReactNode }) {
         setSelectedSet(set);
         setPulls(openBooster(id));
         setPickSlot(null);
+        setSelling(false);
         setActiveTab('boosters');
         setPhase('inspect');
       },
@@ -311,6 +354,7 @@ export function GameProvider({ children }: { children: ReactNode }) {
         setSelectedSet(set);
         setPulls([]);
         setPickSlot(null);
+        setSelling(false);
         setActiveTab('boosters');
         setPhase('inspect');
       },
@@ -343,6 +387,7 @@ export function GameProvider({ children }: { children: ReactNode }) {
       },
       goHome: () => {
         setPickSlot(null);
+        setSelling(false);
         setActiveTab('boosters');
         setPhase('select');
         setSelectedSet(null);
@@ -355,11 +400,15 @@ export function GameProvider({ children }: { children: ReactNode }) {
       },
       setTab: (next) => {
         setPhase('select');
-        if (next !== 'library') setPickSlot(null);
+        if (next !== 'library') {
+          setPickSlot(null);
+          setSelling(false);
+        }
         setActiveTab(next);
       },
       pickBinderSlot: (slot) => {
         setPickSlot(slot);
+        setSelling(false);
         setPhase('select');
         setActiveTab('library');
       },
@@ -384,7 +433,7 @@ export function GameProvider({ children }: { children: ReactNode }) {
         setActiveTab('binder');
       },
     }),
-    [localReady, remoteReady, coins, clock, lastCoinEarnedAt, phase, tab, selectedSet, pulls, collection, binderSlots, pickSlot, displayQueue],
+    [localReady, remoteReady, coins, clock, lastCoinEarnedAt, phase, tab, selectedSet, pulls, collection, binderSlots, pickSlot, selling, displayQueue],
   );
 
   return <GameContext.Provider value={value}>{children}</GameContext.Provider>;

@@ -14,6 +14,7 @@ import { RevealScreen } from './src/screens/RevealScreen';
 import { SelectScreen } from './src/screens/SelectScreen';
 import { SummaryScreen } from './src/screens/SummaryScreen';
 import { AuthScreen } from './src/screens/AuthScreen';
+import { formatBerries } from './src/data/berries';
 import { colors } from './src/theme';
 
 const BERRY_COIN = require('./assets/berry-coin.png');
@@ -58,7 +59,7 @@ function Root() {
         <View pointerEvents="none" style={[styles.coinBalance, { top: Math.max(insets.top, 12) + 8 }]}>
           <View style={styles.coinLine}>
             <Image source={BERRY_COIN} style={styles.coinIcon} />
-            <Text style={styles.coinValue}>{coins}</Text>
+            <Text style={styles.coinValue}>{formatBerries(coins)}</Text>
           </View>
           <Text style={styles.coinTimer}>+{coinsPerInterval} Berrys dans {formatRemaining(nextCoinInMs)}</Text>
         </View>

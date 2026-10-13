@@ -16,7 +16,7 @@ const OP13_DISPLAY_IMAGE = require('../../assets/op13-display.png');
 type Props = { blurred?: boolean };
 
 export function SelectScreen({ blurred = false }: Props) {
-  const { coins, collection, binderSlots, selectSet, selectOp13Display, setTab } = useGame();
+  const { coins, collection, binderSlots, selectSet, selectOp13Display, setTab, startSelling } = useGame();
   const { width, height } = useWindowDimensions();
   const [shutterVisible, setShutterVisible] = useState(false);
   const [shutterMessage, setShutterMessage] = useState('');
@@ -151,6 +151,26 @@ export function SelectScreen({ blurred = false }: Props) {
             </View>
           </View>
         ) : null}
+        {!blurred ? (
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="Vendre des cartes"
+            onPress={startSelling}
+            style={({ pressed }) => [
+              styles.sellButton,
+              {
+                left: shopLeft + shopWidth * 0.055,
+                top: shopTop + shopHeight * 0.758,
+                width: shopWidth * 0.1,
+                height: shopWidth * 0.1,
+              },
+              pressed && styles.sellPressed,
+            ]}
+          >
+            <Image source={BERRY_COIN} style={styles.sellCoin} />
+            <Text style={styles.sellLabel}>Vendre</Text>
+          </Pressable>
+        ) : null}
         {!blurred && speechVisible ? (
           <Pressable
             accessibilityRole="button"
@@ -229,6 +249,23 @@ const styles = StyleSheet.create({
   shutterMessage: { alignItems: 'center', backgroundColor: 'rgba(20, 13, 6, 0.92)', borderWidth: 2, borderColor: '#f3c66d', borderRadius: 16, paddingHorizontal: 24, paddingVertical: 18 },
   shutterTitle: { color: '#ffe2a0', fontWeight: '900', fontSize: 20, letterSpacing: 1.5 },
   shutterText: { color: '#fff2d1', fontSize: 16, fontWeight: '700', marginTop: 7 },
+  sellButton: {
+    position: 'absolute',
+    zIndex: 16,
+    borderRadius: 999,
+    backgroundColor: '#201408',
+    borderWidth: 2,
+    borderColor: '#f3c66d',
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: '#000',
+    shadowOpacity: 0.45,
+    shadowRadius: 6,
+    elevation: 10,
+  },
+  sellPressed: { transform: [{ scale: 0.94 }] },
+  sellCoin: { width: '42%', height: '42%' },
+  sellLabel: { color: '#ffe2a0', fontSize: 8, fontWeight: '900', marginTop: 1 },
   speech: {
     position: 'absolute',
     zIndex: 20,

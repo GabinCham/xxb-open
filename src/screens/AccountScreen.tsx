@@ -4,6 +4,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { useAuth } from '../auth/AuthContext';
 import { TAB_BAR_HEIGHT } from '../components/TabBar';
+import { formatBerries } from '../data/berries';
 import { useGame } from '../game/GameContext';
 import { colors } from '../theme';
 
@@ -37,7 +38,7 @@ export function AccountScreen() {
           <Text style={styles.label}>Berrys</Text>
           <View style={styles.coinRow}>
             <Image source={BERRY_COIN} style={styles.coin} />
-            <Text style={styles.value}>{coins}</Text>
+            <Text style={styles.value}>{formatBerries(coins)}</Text>
           </View>
           <Text style={styles.meta}>+{coinsPerInterval} dans {formatRemaining(nextCoinInMs)}</Text>
         </View>
