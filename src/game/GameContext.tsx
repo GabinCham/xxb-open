@@ -35,6 +35,28 @@ function withTrailingPage(slots: (string | null)[]): (string | null)[] {
   return next.length ? next : emptyPage();
 }
 
+function mergeOwned(left: OwnedCard[], right: OwnedCard[]): OwnedCard[] {
+  const map = new Map<string, OwnedCard>();
+  for (const card of [...left, ...right]) {
+    const prev = map.get(card.id);
+    if (!prev || card.count > prev.count) map.set(card.id, card);
+  }
+  return [...map.values()];
+}
+
+type PlayerSnapshot = {
+  userId: string | null;
+  coins: number;
+  lastCoinEarnedAt: number;
+  collection: OwnedCard[];
+  binderSlots: (string | null)[];
+};
+
+function mergeBinder(left: (string | null)[], right: (string | null)[]): (string | null)[] {
+  const length = Math.max(left.length, right.length, PAGE);
+  return withTrailingPage(Array.from({ length }, (_, index) => right[index] ?? left[index] ?? null));
+}
+
 function op13DisplayQueue(): string[] {
   const queue = Array<string>(OP13_DISPLAY_PACKS).fill('op13');
   const slots = new Set<number>();
@@ -43,7 +65,7 @@ function op13DisplayQueue(): string[] {
   return queue;
 }
 
-export type TabId = 'boosters' | 'library' | 'binder';
+export type TabId = 'boosters' | 'library' | 'binder' | 'account';
 export type Phase = 'select' | 'inspect' | 'reveal' | 'summary';
 
 type GameContextValue = {
@@ -92,6 +114,20 @@ export function GameProvider({ children }: { children: ReactNode }) {
   const [pickSlot, setPickSlot] = useState<number | null>(null);
   const [displayQueue, setDisplayQueue] = useState<string[]>([]);
   const remoteSynced = useRef(false);
+  const snapshot = useRef<PlayerSnapshot>({
+    userId: user?.id ?? null,
+    coins,
+    lastCoinEarnedAt,
+    collection,
+    binderSlots,
+  });
+  snapshot.current = {
+    userId: user?.id ?? null,
+    coins,
+    lastCoinEarnedAt,
+    collection,
+    binderSlots,
+  };
 
   useEffect(() => {
     Promise.all([
@@ -131,6 +167,7 @@ export function GameProvider({ children }: { children: ReactNode }) {
     setRemoteReady(false);
 
     const syncAccount = async () => {
+      const local = snapshot.current;
       const { data, error } = await supabase
         .from('booster_player_state')
         .select('coins, last_coin_earned_at, collection, binder_slots')
@@ -138,38 +175,25 @@ export function GameProvider({ children }: { children: ReactNode }) {
         .maybeSingle();
 
       if (!mounted) return;
-      if (error) {
-        // The local save remains usable if the device is temporarily offline.
-        setRemoteReady(true);
-        return;
-      }
 
-      if (!data) {
-        remoteSynced.current = true;
-        await supabase.from('booster_player_state').insert({
-          user_id: user.id,
-          coins,
-          last_coin_earned_at: new Date(lastCoinEarnedAt).toISOString(),
-          collection,
-          binder_slots: binderSlots,
-        });
-        if (mounted) setRemoteReady(true);
-        return;
-      }
-
-      const savedCoins = Math.max(0, Number(data.coins) || 0);
-      const savedAt = Date.parse(data.last_coin_earned_at);
-      const baseAt = Number.isFinite(savedAt) ? savedAt : Date.now();
+      const remoteCollection = Array.isArray(data?.collection) ? (data.collection as OwnedCard[]) : [];
+      const remoteBinder = Array.isArray(data?.binder_slots)
+        ? withTrailingPage(data.binder_slots as (string | null)[])
+        : emptyPage();
+      const nextCollection = mergeOwned(local.collection, remoteCollection);
+      const nextBinder = mergeBinder(local.binderSlots, remoteBinder);
+      const savedCoins = Math.max(0, Number(data?.coins) || 0);
+      const savedAt = Date.parse(data?.last_coin_earned_at ?? '');
+      const baseAt = Number.isFinite(savedAt) ? savedAt : local.lastCoinEarnedAt;
       const earnLoginBonus = Date.now() - baseAt >= COIN_INTERVAL_MS;
-      const nextCoins = savedCoins + (earnLoginBonus ? COINS_PER_INTERVAL : 0);
+      const nextCoins = Math.max(savedCoins, local.coins) + (earnLoginBonus ? COINS_PER_INTERVAL : 0);
       const nextAt = earnLoginBonus ? Date.now() : baseAt;
-      const nextCollection = Array.isArray(data.collection) ? data.collection as OwnedCard[] : [];
-      const nextBinder = Array.isArray(data.binder_slots) ? withTrailingPage(data.binder_slots as (string | null)[]) : emptyPage();
 
       setCoins(nextCoins);
       setLastCoinEarnedAt(nextAt);
       setCollection(nextCollection);
       setBinderSlots(nextBinder);
+      snapshot.current = { ...local, coins: nextCoins, lastCoinEarnedAt: nextAt, collection: nextCollection, binderSlots: nextBinder };
       AsyncStorage.multiSet([
         [COINS_KEY, String(nextCoins)],
         [COINS_LAST_EARNED_AT_KEY, String(nextAt)],
@@ -177,13 +201,18 @@ export function GameProvider({ children }: { children: ReactNode }) {
         [COLLECTION_KEY, JSON.stringify(nextCollection)],
         [BINDER_KEY, JSON.stringify(nextBinder)],
       ]).catch(() => {});
+
       remoteSynced.current = true;
-      if (earnLoginBonus) {
-        await supabase.from('booster_player_state').update({
-          coins: nextCoins,
-          last_coin_earned_at: new Date(nextAt).toISOString(),
-          updated_at: new Date().toISOString(),
-        }).eq('user_id', user.id);
+      const { error: saveError } = await supabase.from('booster_player_state').upsert({
+        user_id: user.id,
+        coins: nextCoins,
+        last_coin_earned_at: new Date(nextAt).toISOString(),
+        collection: nextCollection,
+        binder_slots: nextBinder,
+        updated_at: new Date().toISOString(),
+      }, { onConflict: 'user_id' });
+      if (saveError && error) {
+        console.warn('Sauvegarde compte impossible', saveError.message);
       }
       if (mounted) setRemoteReady(true);
     };
@@ -197,9 +226,21 @@ export function GameProvider({ children }: { children: ReactNode }) {
     return () => clearInterval(timer);
   }, []);
 
-  const persistRemote = (changes: Record<string, unknown>) => {
-    if (!user || !remoteSynced.current) return;
-    supabase.from('booster_player_state').update({ ...changes, updated_at: new Date().toISOString() }).eq('user_id', user.id).then(() => {});
+  const persistRemote = (changes: Partial<PlayerSnapshot>) => {
+    const userId = snapshot.current.userId;
+    if (!userId || !remoteSynced.current) return;
+    const next = { ...snapshot.current, ...changes };
+    snapshot.current = next;
+    supabase.from('booster_player_state').upsert({
+      user_id: userId,
+      coins: next.coins,
+      last_coin_earned_at: new Date(next.lastCoinEarnedAt).toISOString(),
+      collection: next.collection,
+      binder_slots: next.binderSlots,
+      updated_at: new Date().toISOString(),
+    }, { onConflict: 'user_id' }).then(({ error }) => {
+      if (error) console.warn('Sauvegarde compte impossible', error.message);
+    });
   };
 
   const persistCoins = (next: number) => {
@@ -218,7 +259,7 @@ export function GameProvider({ children }: { children: ReactNode }) {
     const slots = withTrailingPage(next);
     setBinderSlots(slots);
     AsyncStorage.setItem(BINDER_KEY, JSON.stringify(slots)).catch(() => {});
-    persistRemote({ binder_slots: slots });
+    persistRemote({ binderSlots: slots });
   };
 
   useEffect(() => {
@@ -232,7 +273,7 @@ export function GameProvider({ children }: { children: ReactNode }) {
       [COINS_LAST_EARNED_AT_KEY, String(awardedAt)],
       [COINS_VERSION_KEY, COINS_VERSION],
     ]).catch(() => {});
-    persistRemote({ coins: nextCoins, last_coin_earned_at: new Date(awardedAt).toISOString() });
+    persistRemote({ coins: nextCoins, lastCoinEarnedAt: awardedAt });
   }, [localReady, remoteReady, clock, lastCoinEarnedAt, coins]);
 
   const value = useMemo<GameContextValue>(

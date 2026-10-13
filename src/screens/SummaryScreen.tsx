@@ -1,6 +1,7 @@
-import { LinearGradient } from 'expo-linear-gradient';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import { BackToShopButton } from '../components/BackToShopButton';
 import { TradingCard } from '../components/TradingCard';
 import { useGame } from '../game/GameContext';
 import { rarityStyle, colors } from '../theme';
@@ -16,15 +17,14 @@ function tone(card: { rarity: string; variantLabel?: string }) {
 }
 
 export function SummaryScreen() {
+  const insets = useSafeAreaInsets();
   const { pulls, selectedSet, goHome, setTab, continueDisplay, displayPacksRemaining } = useGame();
   const hits = pulls.map(hitLabel).filter((label): label is string => Boolean(label));
 
   return (
-    <LinearGradient colors={['#12080c', colors.bg]} style={styles.fill}>
-      <Pressable style={styles.shopBack} onPress={goHome}>
-        <Text style={styles.shopBackText}>← Boutique</Text>
-      </Pressable>
-      <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
+    <View style={styles.fill}>
+      <BackToShopButton onPress={goHome} />
+      <ScrollView contentContainerStyle={[styles.content, { paddingTop: Math.max(insets.top, 12) + 58 }]} showsVerticalScrollIndicator={false}>
         <Text style={styles.kicker}>{selectedSet?.code} · OUVERT</Text>
         <Text style={styles.title}>Tes cartes</Text>
         <Text style={styles.lead}>
@@ -49,14 +49,13 @@ export function SummaryScreen() {
           <Text style={styles.binderButtonText}>Voir le classeur</Text>
         </Pressable>
       </ScrollView>
-    </LinearGradient>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
-  fill: { flex: 1 },
+  fill: { flex: 1, backgroundColor: 'rgba(18, 8, 6, 0.28)' },
   content: {
-    paddingTop: 78,
     paddingBottom: 48,
     paddingHorizontal: 16,
     maxWidth: 760,
@@ -78,8 +77,6 @@ const styles = StyleSheet.create({
     borderRadius: 999,
   },
   ctaText: { color: '#1a1208', fontWeight: '800', fontSize: 16 },
-  shopBack: { position: 'absolute', top: 24, left: 18, zIndex: 2, borderColor: '#c99a48', borderWidth: 1, borderRadius: 999, paddingHorizontal: 12, paddingVertical: 8, backgroundColor: 'rgba(23, 13, 8, 0.9)' },
-  shopBackText: { color: '#f4d895', fontSize: 13, fontWeight: '800' },
   binderButton: { marginTop: 14, alignSelf: 'center', borderColor: colors.gold, borderWidth: 1, borderRadius: 999, paddingHorizontal: 22, paddingVertical: 12 },
   binderButtonText: { color: colors.gold, fontWeight: '800', fontSize: 15 },
 });

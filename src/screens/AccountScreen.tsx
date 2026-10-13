@@ -1,0 +1,73 @@
+import { LinearGradient } from 'expo-linear-gradient';
+import { Image, Pressable, StyleSheet, Text, View } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+
+import { useAuth } from '../auth/AuthContext';
+import { TAB_BAR_HEIGHT } from '../components/TabBar';
+import { useGame } from '../game/GameContext';
+import { colors } from '../theme';
+
+const BERRY_COIN = require('../../assets/berry-coin.png');
+
+function formatRemaining(milliseconds: number) {
+  const totalSeconds = Math.ceil(milliseconds / 1000);
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds % 60;
+  return `${minutes}:${String(seconds).padStart(2, '0')}`;
+}
+
+export function AccountScreen() {
+  const insets = useSafeAreaInsets();
+  const { user, signOut } = useAuth();
+  const { coins, coinsPerInterval, nextCoinInMs, collection } = useGame();
+
+  return (
+    <LinearGradient colors={['#12080c', colors.bg]} style={styles.fill}>
+      <View style={[styles.content, { paddingTop: Math.max(insets.top, 12) + 18, paddingBottom: TAB_BAR_HEIGHT + insets.bottom + 24 }]}>
+        <Text style={styles.kicker}>PIRATE</Text>
+        <Text style={styles.title}>Compte</Text>
+        <Text style={styles.lead}>Tes Berrys et tes cartes restent liés à cet e-mail.</Text>
+
+        <View style={styles.card}>
+          <Text style={styles.label}>E-mail</Text>
+          <Text style={styles.value}>{user?.email ?? '—'}</Text>
+        </View>
+
+        <View style={styles.card}>
+          <Text style={styles.label}>Berrys</Text>
+          <View style={styles.coinRow}>
+            <Image source={BERRY_COIN} style={styles.coin} />
+            <Text style={styles.value}>{coins}</Text>
+          </View>
+          <Text style={styles.meta}>+{coinsPerInterval} dans {formatRemaining(nextCoinInMs)}</Text>
+        </View>
+
+        <View style={styles.card}>
+          <Text style={styles.label}>Collection</Text>
+          <Text style={styles.value}>{collection.length} carte{collection.length > 1 ? 's' : ''}</Text>
+        </View>
+
+        <Pressable onPress={() => signOut()} style={({ pressed }) => [styles.logout, pressed && styles.pressed]} accessibilityLabel="Se déconnecter">
+          <Text style={styles.logoutText}>Déconnexion</Text>
+        </Pressable>
+      </View>
+    </LinearGradient>
+  );
+}
+
+const styles = StyleSheet.create({
+  fill: { flex: 1 },
+  content: { flex: 1, paddingHorizontal: 22, maxWidth: 520, width: '100%', alignSelf: 'center' },
+  kicker: { color: colors.gold, letterSpacing: 2, fontWeight: '800', fontSize: 12 },
+  title: { color: colors.white, fontSize: 32, fontWeight: '900', marginTop: 8 },
+  lead: { color: colors.muted, marginTop: 8, marginBottom: 24, lineHeight: 22 },
+  card: { backgroundColor: 'rgba(25, 14, 7, 0.88)', borderColor: '#80642c', borderWidth: 1, borderRadius: 14, paddingHorizontal: 16, paddingVertical: 14, marginBottom: 12 },
+  label: { color: '#d0b77b', fontSize: 11, fontWeight: '800', letterSpacing: 0.6, marginBottom: 6 },
+  value: { color: colors.cream, fontSize: 16, fontWeight: '800' },
+  coinRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  coin: { width: 22, height: 22 },
+  meta: { color: '#d0b77b', fontSize: 12, marginTop: 6 },
+  logout: { marginTop: 12, alignItems: 'center', borderColor: colors.gold, borderWidth: 1, borderRadius: 12, paddingVertical: 14 },
+  logoutText: { color: colors.gold, fontWeight: '900', fontSize: 15 },
+  pressed: { opacity: 0.7 },
+});

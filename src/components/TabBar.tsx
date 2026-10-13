@@ -1,4 +1,5 @@
 import { Pressable, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import type { TabId } from '../game/GameContext';
 import { colors } from '../theme';
@@ -9,6 +10,7 @@ const TABS: { id: TabId; label: string; mark: string }[] = [
   { id: 'library', label: 'Bibliothèque', mark: '▤' },
   { id: 'boosters', label: 'Shop', mark: '⌂' },
   { id: 'binder', label: 'Classeur', mark: '▣' },
+  { id: 'account', label: 'Compte', mark: '☺' },
 ];
 
 type Props = {
@@ -18,10 +20,11 @@ type Props = {
 
 export function TabBar({ active, onChange }: Props) {
   const { width } = useWindowDimensions();
-  const tabWidth = Math.min(132, (width - 28) / TABS.length);
+  const insets = useSafeAreaInsets();
+  const tabWidth = Math.min(108, (width - 20) / TABS.length);
 
   return (
-    <View style={styles.bar}>
+    <View style={[styles.bar, { height: TAB_BAR_HEIGHT + insets.bottom, paddingBottom: 10 + insets.bottom }]}>
       {TABS.map((tab) => {
         const on = tab.id === active;
         return (

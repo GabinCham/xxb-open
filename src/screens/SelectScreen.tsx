@@ -79,7 +79,7 @@ export function SelectScreen({ blurred = false }: Props) {
 
   return (
     <View style={styles.fill}>
-      <Image source={SHOP_BACKGROUND} resizeMode="contain" blurRadius={blurred ? 11 : 0} style={styles.shopBackground} />
+      <Image source={SHOP_BACKGROUND} resizeMode="contain" blurRadius={blurred ? 18 : 0} style={styles.shopBackground} />
       <View style={[styles.fill, blurred && styles.nonInteractive]}>
         {blurred ? <View style={styles.dim} /> : null}
         <View style={[styles.shelf, shelfStyle]}>
@@ -193,7 +193,7 @@ const styles = StyleSheet.create({
   fill: { flex: 1 },
   shopBackground: { ...StyleSheet.absoluteFill, width: '100%', height: '100%', backgroundColor: '#130b08' },
   nonInteractive: { pointerEvents: 'none' },
-  dim: { ...StyleSheet.absoluteFill, backgroundColor: 'rgba(10, 5, 4, 0.35)' },
+  dim: { ...StyleSheet.absoluteFill, backgroundColor: 'rgba(18, 10, 6, 0.16)' },
   shelf: {
     position: 'absolute',
     flexDirection: 'row',

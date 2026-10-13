@@ -46,3 +46,6 @@ yarn-error.*
 
 # Tesseract language cache
 *.traineddata
+
+# Supabase CLI
+supabase/.temp/

@@ -4,6 +4,7 @@ import { useState } from 'react';
 import { Image, Platform, Pressable, StyleSheet, Text, View } from 'react-native';
 import Animated, { Easing, useAnimatedStyle, useSharedValue, withSequence, withTiming } from 'react-native-reanimated';
 
+import { BackToShopButton } from '../components/BackToShopButton';
 import { packTextureModule } from '../data/packTextures';
 import { useGame } from '../game/GameContext';
 import { colors } from '../theme';
@@ -41,9 +42,7 @@ export function InspectScreen({ overlay = false }: { overlay?: boolean }) {
 
   const content = (
     <>
-      <Pressable onPress={goHome} style={styles.back}>
-        <Text style={styles.backText}>← Changer de booster</Text>
-      </Pressable>
+      <BackToShopButton label="← Boutique" onPress={goHome} />
 
       <Text style={styles.kicker}>{selectedSet.code}</Text>
       <Text style={styles.title}>{selectedSet.name}</Text>
@@ -69,9 +68,7 @@ export function InspectScreen({ overlay = false }: { overlay?: boolean }) {
 
 const styles = StyleSheet.create({
   fill: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 24 },
-  overlay: { backgroundColor: 'rgba(8, 4, 5, 0.18)' },
-  back: { position: 'absolute', top: 56, left: 20 },
-  backText: { color: colors.muted, fontSize: 15 },
+  overlay: { backgroundColor: 'transparent' },
   kicker: { color: colors.gold, letterSpacing: 3, fontWeight: '800' },
   title: { color: colors.white, fontSize: 28, fontWeight: '900', marginTop: 8, textAlign: 'center' },
   lead: { color: colors.muted, marginTop: 8, marginBottom: 28, textAlign: 'center' },
