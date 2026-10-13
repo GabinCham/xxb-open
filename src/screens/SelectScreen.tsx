@@ -1,23 +1,26 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Animated, Image, Pressable, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import { TradingCard } from '../components/TradingCard';
 import { BOOSTER_SETS, boosterPrice, dailyBoosterIds, shopDayKey } from '../data/sets';
 import { packTextureModule } from '../data/packTextures';
-import { TradingCard } from '../components/TradingCard';
-import { OP13_DISPLAY_PRICE, useGame } from '../game/GameContext';
+import { OP13_DISPLAY_PACKS, OP13_DISPLAY_PRICE, useGame } from '../game/GameContext';
 
 const SHOP_BACKGROUND = require('../../assets/grand-line-tcg-shop.png');
 const BINDER_IMAGE = require('../../assets/tcg-binder.png');
 const METAL_SHUTTER = require('../../assets/shop-metal-shutter.png');
 const BERRY_COIN = require('../../assets/berry-coin.png');
 const OP13_DISPLAY_IMAGE = require('../../assets/op13-display.png');
+const OP13_DISPLAY_OPEN_IMAGE = require('../../assets/op13-display-open.png');
 
 type Props = { blurred?: boolean };
 
 export function SelectScreen({ blurred = false }: Props) {
-  const { coins, collection, binderSlots, selectSet, selectOp13Display, setTab, startSelling } = useGame();
+  const { coins, collection, binderSlots, selectSet, selectOp13Display, resumeDisplay, openWelcomeGift, welcomeGiftPackId, setTab, startSelling, displayPacksRemaining } = useGame();
   const { width, height } = useWindowDimensions();
+  const insets = useSafeAreaInsets();
   const [shutterVisible, setShutterVisible] = useState(false);
   const [shutterMessage, setShutterMessage] = useState('');
   const [clock, setClock] = useState(() => Date.now());
@@ -38,16 +41,17 @@ export function SelectScreen({ blurred = false }: Props) {
   }, []);
 
   useEffect(() => {
-    const storageKey = `shop-speech-${dayKey}`;
+    const storageKey = welcomeGiftPackId ? 'shop-welcome-speech' : `shop-speech-${dayKey}`;
     AsyncStorage.getItem(storageKey).then((value) => {
       if (value !== '1') setSpeechVisible(true);
     });
-  }, [dayKey]);
+  }, [dayKey, welcomeGiftPackId]);
 
   const dismissSpeech = () => {
     setSpeechVisible(false);
-    void AsyncStorage.setItem(`shop-speech-${dayKey}`, '1');
+    void AsyncStorage.setItem(welcomeGiftPackId ? 'shop-welcome-speech' : `shop-speech-${dayKey}`, '1');
   };
+  const giftPackImage = welcomeGiftPackId ? packTextureModule(welcomeGiftPackId) : null;
   const shelfStyle = {
     left: (width - shopWidth) / 2 + shopWidth * 0.11,
     top: height * 0.18,
@@ -82,6 +86,7 @@ export function SelectScreen({ blurred = false }: Props) {
       <Image source={SHOP_BACKGROUND} resizeMode="contain" blurRadius={blurred ? 18 : 0} style={styles.shopBackground} />
       <View style={[styles.fill, blurred && styles.nonInteractive]}>
         {blurred ? <View style={styles.dim} /> : null}
+        {!blurred ? (
         <View style={[styles.shelf, shelfStyle]}>
           {featuredBoosterIds.map((id) => {
             const set = BOOSTER_SETS.find((candidate) => candidate.id === id);
@@ -109,17 +114,28 @@ export function SelectScreen({ blurred = false }: Props) {
             );
           })}
         </View>
+        ) : null}
         {!blurred ? (
           <Pressable
             accessibilityLabel="Ouvrir une display OP-13 de 24 boosters"
             onPress={() => {
+              if (displayPacksRemaining) {
+                setShutterMessage('Finis d’abord ta display déjà ouverte, en bas de l’écran.');
+                setShutterVisible(true);
+                Animated.sequence([
+                  Animated.timing(shutter, { toValue: 1, duration: 420, useNativeDriver: true }),
+                  Animated.delay(1350),
+                  Animated.timing(shutter, { toValue: 0, duration: 480, useNativeDriver: true }),
+                ]).start(() => setShutterVisible(false));
+                return;
+              }
               if (coins < OP13_DISPLAY_PRICE) {
                 closeShop();
                 return;
               }
               selectOp13Display();
             }}
-            style={({ pressed }) => [styles.displayButton, displayStyle, pressed && coins >= OP13_DISPLAY_PRICE && styles.pressed, coins < OP13_DISPLAY_PRICE && styles.displayEmpty]}
+            style={({ pressed }) => [styles.displayButton, displayStyle, pressed && coins >= OP13_DISPLAY_PRICE && !displayPacksRemaining && styles.pressed, (coins < OP13_DISPLAY_PRICE || displayPacksRemaining) && styles.displayEmpty]}
           >
             <Image source={OP13_DISPLAY_IMAGE} resizeMode="contain" style={styles.displayImage} />
             <View style={styles.displayFooter}>
@@ -171,20 +187,71 @@ export function SelectScreen({ blurred = false }: Props) {
             <Text style={styles.sellLabel}>Vendre</Text>
           </Pressable>
         ) : null}
+        {!blurred && !giftPackImage && displayPacksRemaining ? (
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel={`Continuer ta display, ${displayPacksRemaining} boosters restants`}
+            onPress={resumeDisplay}
+            style={({ pressed }) => {
+              const resumeWidth = Math.min(340, shopWidth * 0.86);
+              return [
+                styles.resumeDisplay,
+                {
+                  width: resumeWidth,
+                  left: (width - resumeWidth) / 2,
+                  bottom: Math.max(insets.bottom, 2) + 36,
+                },
+                pressed && styles.pressed,
+              ];
+            }}
+          >
+            <Text style={styles.resumeLabel}>{displayPacksRemaining}</Text>
+            <Image
+              source={displayPacksRemaining >= OP13_DISPLAY_PACKS ? OP13_DISPLAY_IMAGE : OP13_DISPLAY_OPEN_IMAGE}
+              resizeMode="contain"
+              style={styles.resumeImage}
+            />
+          </Pressable>
+        ) : null}
+        {!blurred && giftPackImage ? (
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="Ouvrir ton booster cadeau"
+            onPress={openWelcomeGift}
+            style={({ pressed }) => {
+              const resumeWidth = Math.min(168, shopWidth * 0.42);
+              return [
+                styles.resumeDisplay,
+                {
+                  width: resumeWidth,
+                  left: (width - resumeWidth) / 2,
+                  bottom: Math.max(insets.bottom, 2) + 36,
+                },
+                pressed && styles.pressed,
+              ];
+            }}
+          >
+            <Text style={styles.resumeLabel}>1</Text>
+            <Image source={giftPackImage} resizeMode="contain" style={styles.giftPackImage} />
+          </Pressable>
+        ) : null}
         {!blurred && speechVisible ? (
           <Pressable
             accessibilityRole="button"
-            accessibilityLabel="Nouveau booster tous les jours à 12 heures. Appuie pour fermer."
+            accessibilityLabel={welcomeGiftPackId ? 'Premier jour, un booster cadeau. Appuie pour fermer.' : 'Nouveau booster tous les jours à 12 heures. Appuie pour fermer.'}
             onPress={dismissSpeech}
             style={[
               styles.speech,
+              welcomeGiftPackId ? styles.welcomeSpeech : null,
               {
                 left: shopLeft + shopWidth * 0.48,
                 top: shopTop + shopHeight * 0.34,
               },
             ]}
           >
-            <Text style={styles.speechText}>Nouveau booster tous les jours à 12h</Text>
+            <Text style={styles.speechText}>
+              {welcomeGiftPackId ? '1er jour ?! Tiens cadeau voici un booster' : 'Nouveau booster tous les jours à 12h'}
+            </Text>
             <View style={styles.speechTailBorder} />
             <View style={styles.speechTail} />
           </Pressable>
@@ -213,7 +280,7 @@ const styles = StyleSheet.create({
   fill: { flex: 1 },
   shopBackground: { ...StyleSheet.absoluteFill, width: '100%', height: '100%', backgroundColor: '#130b08' },
   nonInteractive: { pointerEvents: 'none' },
-  dim: { ...StyleSheet.absoluteFill, backgroundColor: 'rgba(18, 10, 6, 0.16)' },
+  dim: { ...StyleSheet.absoluteFill, backgroundColor: 'rgba(18, 10, 6, 0.42)' },
   shelf: {
     position: 'absolute',
     flexDirection: 'row',
@@ -249,6 +316,26 @@ const styles = StyleSheet.create({
   shutterMessage: { alignItems: 'center', backgroundColor: 'rgba(20, 13, 6, 0.92)', borderWidth: 2, borderColor: '#f3c66d', borderRadius: 16, paddingHorizontal: 24, paddingVertical: 18 },
   shutterTitle: { color: '#ffe2a0', fontWeight: '900', fontSize: 20, letterSpacing: 1.5 },
   shutterText: { color: '#fff2d1', fontSize: 16, fontWeight: '700', marginTop: 7 },
+  resumeDisplay: {
+    position: 'absolute',
+    zIndex: 18,
+    alignItems: 'center',
+  },
+  resumeImage: { width: '100%', height: 148, marginTop: 4 },
+  giftPackImage: { width: '100%', height: 148, marginTop: 4 },
+  welcomeSpeech: { width: 196 },
+  resumeLabel: {
+    color: '#ffe2a0',
+    fontSize: 16,
+    fontWeight: '900',
+    backgroundColor: 'rgba(32, 20, 8, 0.88)',
+    borderColor: '#f3c66d',
+    borderWidth: 1,
+    borderRadius: 999,
+    overflow: 'hidden',
+    paddingHorizontal: 14,
+    paddingVertical: 5,
+  },
   sellButton: {
     position: 'absolute',
     zIndex: 16,

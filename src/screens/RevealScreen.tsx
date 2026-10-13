@@ -1,12 +1,11 @@
 import { useEffect, useState } from 'react';
 import { StyleSheet, View } from 'react-native';
 
-import { BackToShopButton } from '../components/BackToShopButton';
 import { CardStack } from '../components/CardStack';
 import { useGame } from '../game/GameContext';
 
 export function RevealScreen() {
-  const { pulls, finishReveal, goHome, setTab } = useGame();
+  const { pulls, finishReveal, goHome } = useGame();
   const [stack, setStack] = useState(pulls);
 
   useEffect(() => {
@@ -16,7 +15,7 @@ export function RevealScreen() {
   const dismissTop = () => {
     setStack((current) => {
       if (current.length <= 1) {
-        setTimeout(finishReveal, 180);
+        setTimeout(finishReveal, 40);
         return [];
       }
       return current.slice(1);
@@ -28,15 +27,9 @@ export function RevealScreen() {
     goHome();
   };
 
-  const finishToBinder = () => {
-    finishReveal();
-    setTab('binder');
-  };
-
   return (
     <View style={styles.fill}>
-      {stack.length === 1 ? <BackToShopButton onPress={finishToShop} /> : null}
-      <CardStack cards={stack} onDismissTop={dismissTop} onLastBinder={finishToBinder} />
+      <CardStack cards={stack} onDismissTop={dismissTop} onLastShop={finishToShop} />
     </View>
   );
 }

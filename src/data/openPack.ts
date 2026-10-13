@@ -25,7 +25,7 @@ const HIT_TABLE: { key: HitKey; p: number }[] = [
   { key: 'leader', p: 1 / 12 },
 ];
 
-const CHASE_KEYS: HitKey[] = ['saa', 'manga', 'tr', 'sp', 'laa', 'sec', 'aa'];
+const CHASE_KEYS: HitKey[] = ['saa', 'manga', 'tr', 'laa', 'sec', 'aa'];
 
 type Buckets = Record<string, CardDef[]>;
 
@@ -72,7 +72,7 @@ function bucket(pool: CardDef[]): Buckets {
       if (card.rarity === 'SP') buckets.sp.push(card);
       if (card.rarity === 'TR') buckets.tr.push(card);
     } else if (finish === 'poster') {
-      buckets.sp.push(card);
+      buckets.tr.push(card);
     } else {
       buckets[finish]?.push(card);
     }

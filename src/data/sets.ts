@@ -1,5 +1,9 @@
 import type { BoosterSet } from './types';
 
+/** Local test only. Must be `false` / `0` before any commit / push. */
+export const DEV_SHELF_OP13_HITS = false;
+export const DEV_GRANT_BERRIES = 0;
+
 export const BOOSTER_PRICES: Record<string, number> = {
   op01: 9,
   op02: 5,
@@ -54,7 +58,8 @@ export function dailyBoosterIds(date = new Date()): string[] {
   while (featured.length < 3 && candidates.length) {
     featured.push(candidates.splice(next() % candidates.length, 1)[0]);
   }
-  return featured;
+  if (!DEV_SHELF_OP13_HITS) return featured;
+  return ['op13-hits', ...featured.filter((id) => id !== 'op13' && id !== 'op13-hits')].slice(0, 3);
 }
 
 export const BOOSTER_SETS: BoosterSet[] = [
@@ -150,7 +155,7 @@ export const BOOSTER_SETS: BoosterSet[] = [
     id: 'op13-hits',
     code: 'OP-13-HITS',
     name: 'Carrying On His Will',
-    tagline: 'Test · chase garanti (SEC / AA / manga / SP)',
+    tagline: 'Test · hit garanti (SEC / AA / manga)',
     packFrom: '#5a3a08',
     packTo: '#140c04',
     ribbon: '#ffd36b',

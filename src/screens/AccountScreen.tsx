@@ -1,10 +1,12 @@
 import { LinearGradient } from 'expo-linear-gradient';
-import { Image, Pressable, StyleSheet, Text, View } from 'react-native';
+import { Image, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { useAuth } from '../auth/AuthContext';
 import { TAB_BAR_HEIGHT } from '../components/TabBar';
 import { formatBerries } from '../data/berries';
+import { collectionStats } from '../data/collection';
+import { boosterBreakdown, totalBoosters } from '../data/stats';
 import { useGame } from '../game/GameContext';
 import { colors } from '../theme';
 
@@ -17,14 +19,28 @@ function formatRemaining(milliseconds: number) {
   return `${minutes}:${String(seconds).padStart(2, '0')}`;
 }
 
+function formatPercent(value: number) {
+  return `${(value * 100).toLocaleString('fr-FR', { maximumFractionDigits: 1 })} %`;
+}
+
 export function AccountScreen() {
   const insets = useSafeAreaInsets();
   const { user, signOut } = useAuth();
-  const { coins, coinsPerInterval, nextCoinInMs, collection } = useGame();
+  const { coins, coinsPerInterval, nextCoinInMs, collection, openStats } = useGame();
+  const cards = collectionStats(collection);
+  const packs = totalBoosters(openStats);
+  const hits = openStats.hitsPulled;
+  const sets = boosterBreakdown(openStats);
 
   return (
     <LinearGradient colors={['#12080c', colors.bg]} style={styles.fill}>
-      <View style={[styles.content, { paddingTop: Math.max(insets.top, 12) + 18, paddingBottom: TAB_BAR_HEIGHT + insets.bottom + 24 }]}>
+      <ScrollView
+        contentContainerStyle={[
+          styles.content,
+          { paddingTop: Math.max(insets.top, 12) + 18, paddingBottom: TAB_BAR_HEIGHT + insets.bottom + 24 },
+        ]}
+        showsVerticalScrollIndicator={false}
+      >
         <Text style={styles.kicker}>PIRATE</Text>
         <Text style={styles.title}>Compte</Text>
         <Text style={styles.lead}>Tes Berrys et tes cartes restent liés à cet e-mail.</Text>
@@ -44,21 +60,54 @@ export function AccountScreen() {
         </View>
 
         <View style={styles.card}>
+          <Text style={styles.label}>Berrys dépensés</Text>
+          <View style={styles.coinRow}>
+            <Image source={BERRY_COIN} style={styles.coin} />
+            <Text style={styles.value}>{formatBerries(openStats.berriesSpent)}</Text>
+          </View>
+        </View>
+
+        <View style={styles.card}>
+          <Text style={styles.label}>Boosters ouverts</Text>
+          <Text style={styles.value}>{packs} booster{packs > 1 ? 's' : ''}</Text>
+          {sets.length ? (
+            <Text style={styles.meta}>{sets.map((set) => `${set.count} ${set.code}`).join(', ')}</Text>
+          ) : (
+            <Text style={styles.meta}>Aucun booster ouvert depuis le suivi.</Text>
+          )}
+        </View>
+
+        <View style={styles.card}>
+          <Text style={styles.label}>Hits</Text>
+          <Text style={styles.value}>{hits} hit{hits > 1 ? 's' : ''}</Text>
+          <Text style={styles.meta}>
+            {packs === 0
+              ? 'Le taux se calcule après le premier booster.'
+              : hits === 0
+                ? `0 % · 0 hit sur ${packs} booster${packs > 1 ? 's' : ''}`
+                : `${formatPercent(hits / packs)} · 1 hit tous les ${formatBerries(packs / hits)} boosters`}
+          </Text>
+        </View>
+
+        <View style={styles.card}>
           <Text style={styles.label}>Collection</Text>
-          <Text style={styles.value}>{collection.length} carte{collection.length > 1 ? 's' : ''}</Text>
+          <Text style={styles.value}>
+            {cards.unique} carte{cards.unique > 1 ? 's' : ''} unique{cards.unique > 1 ? 's' : ''}
+          </Text>
+          <Text style={styles.meta}>{cards.total} en tout</Text>
         </View>
 
         <Pressable onPress={() => signOut()} style={({ pressed }) => [styles.logout, pressed && styles.pressed]} accessibilityLabel="Se déconnecter">
           <Text style={styles.logoutText}>Déconnexion</Text>
         </Pressable>
-      </View>
+      </ScrollView>
     </LinearGradient>
   );
 }
 
 const styles = StyleSheet.create({
   fill: { flex: 1 },
-  content: { flex: 1, paddingHorizontal: 22, maxWidth: 520, width: '100%', alignSelf: 'center' },
+  content: { paddingHorizontal: 22, maxWidth: 520, width: '100%', alignSelf: 'center' },
   kicker: { color: colors.gold, letterSpacing: 2, fontWeight: '800', fontSize: 12 },
   title: { color: colors.white, fontSize: 32, fontWeight: '900', marginTop: 8 },
   lead: { color: colors.muted, marginTop: 8, marginBottom: 24, lineHeight: 22 },
@@ -67,7 +116,7 @@ const styles = StyleSheet.create({
   value: { color: colors.cream, fontSize: 16, fontWeight: '800' },
   coinRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   coin: { width: 22, height: 22 },
-  meta: { color: '#d0b77b', fontSize: 12, marginTop: 6 },
+  meta: { color: '#d0b77b', fontSize: 12, marginTop: 6, lineHeight: 18 },
   logout: { marginTop: 12, alignItems: 'center', borderColor: colors.gold, borderWidth: 1, borderRadius: 12, paddingVertical: 14 },
   logoutText: { color: colors.gold, fontWeight: '900', fontSize: 15 },
   pressed: { opacity: 0.7 },

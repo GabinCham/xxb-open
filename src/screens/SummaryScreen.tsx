@@ -8,7 +8,7 @@ import { rarityStyle, colors } from '../theme';
 
 function hitLabel(card: { rarity: string; variantLabel?: string; name: string }) {
   if (card.variantLabel) return `${card.variantLabel} ${card.name}`;
-  if (['SR', 'SEC', 'L', 'SP', 'TR'].includes(card.rarity)) return `${card.rarity} ${card.name}`;
+  if (['SEC', 'TR'].includes(card.rarity)) return `${card.rarity} ${card.name}`;
   return null;
 }
 
@@ -18,7 +18,7 @@ function tone(card: { rarity: string; variantLabel?: string }) {
 
 export function SummaryScreen() {
   const insets = useSafeAreaInsets();
-  const { pulls, selectedSet, goHome, setTab, continueDisplay, displayPacksRemaining } = useGame();
+  const { pulls, selectedSet, goHome, setTab, continueDisplay, displayPacksRemaining, displaySession } = useGame();
   const hits = pulls.map(hitLabel).filter((label): label is string => Boolean(label));
 
   return (
@@ -40,9 +40,9 @@ export function SummaryScreen() {
           ))}
         </View>
 
-        {displayPacksRemaining ? (
+        {displaySession && displayPacksRemaining ? (
           <Pressable style={styles.cta} onPress={continueDisplay}>
-            <Text style={styles.ctaText}>{displayPacksRemaining > 1 ? `Ouvrir le booster suivant (${displayPacksRemaining - 1})` : 'Terminer la display'}</Text>
+            <Text style={styles.ctaText}>Ouvrir le booster suivant ({displayPacksRemaining})</Text>
           </Pressable>
         ) : null}
         <Pressable style={styles.binderButton} onPress={() => setTab('binder')}>

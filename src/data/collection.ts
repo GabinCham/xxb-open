@@ -22,6 +22,22 @@ export function collectionKey(card: CardDef): string {
   return card.id;
 }
 
+/** API sometimes tags a same-set Secret Rare as (SP). Keep reprints as SP. */
+export function repairOwnedCard(card: OwnedCard): OwnedCard {
+  const reprint = / -\s*(OP|EB|ST|PR)\s*\d/i.test(card.name) || /_p\d/i.test(card.id);
+  if (card.rarity === 'SEC' && card.variantLabel === 'SP' && !reprint) {
+    return { ...card, finish: 'base', variantLabel: 'SEC' };
+  }
+  if (card.rarity === 'SEC' && !card.variantLabel && (card.finish ?? 'base') === 'base') {
+    return { ...card, variantLabel: 'SEC' };
+  }
+  return card;
+}
+
+export function repairCollection(cards: OwnedCard[]) {
+  return cards.map(repairOwnedCard);
+}
+
 export function addPulls(collection: OwnedCard[], pulls: PulledCard[]): OwnedCard[] {
   const next = new Map(collection.map((card) => [collectionKey(card), { ...card }]));
   for (const pull of pulls) {

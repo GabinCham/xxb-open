@@ -1,12 +1,14 @@
 import { useMemo, useState } from 'react';
 import { LinearGradient } from 'expo-linear-gradient';
-import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Modal, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import { BackToShopButton } from '../components/BackToShopButton';
+import { CardInspectModal } from '../components/CardInspectModal';
 import { TAB_BAR_HEIGHT } from '../components/TabBar';
 import { TradingCard } from '../components/TradingCard';
 import { formatBerries } from '../data/berries';
-import { collectionStats } from '../data/collection';
+import { collectionStats, type OwnedCard } from '../data/collection';
 import { cardSellKey, SELL_RARITIES, sellableCount, sellPrice } from '../data/sell';
 import { useGame } from '../game/GameContext';
 import { colors } from '../theme';
@@ -14,7 +16,9 @@ import { colors } from '../theme';
 export function LibraryScreen() {
   const insets = useSafeAreaInsets();
   const { collection, pickSlot, binderSlots, placeBinderCard, clearBinderSlot, selling, sellCards, setTab } = useGame();
-  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [selected, setSelected] = useState<Record<string, number>>({});
+  const [qtyCard, setQtyCard] = useState<{ card: OwnedCard; max: number; qty: number } | null>(null);
+  const [inspectCard, setInspectCard] = useState<OwnedCard | null>(null);
   const [soldNote, setSoldNote] = useState('');
   const stats = collectionStats(collection);
   const picking = pickSlot != null;
@@ -29,8 +33,7 @@ export function LibraryScreen() {
     let copies = 0;
     let berries = 0;
     for (const card of collection) {
-      if (!selected.has(card.id)) continue;
-      const take = sellableCount(card, reserved.get(card.id) ?? 0);
+      const take = Math.min(selected[card.id] ?? 0, sellableCount(card, reserved.get(card.id) ?? 0));
       copies += take;
       berries += take * sellPrice(card);
     }
@@ -48,32 +51,54 @@ export function LibraryScreen() {
     return counts;
   }, [collection, reserved]);
 
-  const toggleCard = (id: string) => {
+  const pickSellCard = (card: OwnedCard, extras: number) => {
     setSoldNote('');
-    setSelected((current) => {
-      const next = new Set(current);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-      return next;
-    });
+    if (selected[card.id]) {
+      setSelected((current) => {
+        const next = { ...current };
+        delete next[card.id];
+        return next;
+      });
+      return;
+    }
+    if (extras > 1) {
+      setQtyCard({ card, max: extras, qty: 1 });
+      return;
+    }
+    setSelected((current) => ({ ...current, [card.id]: 1 }));
   };
 
-  const sellIds = (ids: string[]) => {
-    const payout = sellCards(ids);
-    setSelected(new Set());
+  const confirmQty = () => {
+    if (!qtyCard) return;
+    const take = Math.max(1, Math.min(qtyCard.max, qtyCard.qty));
+    setSelected((current) => ({ ...current, [qtyCard.card.id]: take }));
+    setQtyCard(null);
+  };
+
+  const sellAmounts = (amounts: Record<string, number>) => {
+    const payout = sellCards(amounts);
+    setSelected({});
+    setQtyCard(null);
     if (payout > 0) setSoldNote(`+${formatBerries(payout)} Berrys`);
   };
 
   const sellRarity = (rarity: string) => {
-    sellIds(collection.filter((card) => cardSellKey(card) === rarity).map((card) => card.id));
+    const amounts: Record<string, number> = {};
+    for (const card of collection) {
+      if (cardSellKey(card) !== rarity) continue;
+      const take = sellableCount(card, reserved.get(card.id) ?? 0);
+      if (take > 0) amounts[card.id] = take;
+    }
+    sellAmounts(amounts);
   };
 
   return (
     <LinearGradient colors={['#12080c', colors.bg]} style={styles.fill}>
+      {selling ? <BackToShopButton onPress={() => setTab('boosters')} /> : null}
       <ScrollView
         contentContainerStyle={[
           styles.content,
-          { paddingTop: Math.max(insets.top, 12) + 36, paddingBottom: TAB_BAR_HEIGHT + insets.bottom + (selling ? 118 : 24) },
+          { paddingTop: Math.max(insets.top, 12) + (selling ? 58 : 36), paddingBottom: TAB_BAR_HEIGHT + insets.bottom + (selling && selectedPayout.copies ? 96 : 24) },
         ]}
         showsVerticalScrollIndicator={false}
       >
@@ -121,19 +146,31 @@ export function LibraryScreen() {
         <View style={styles.grid}>
           {collection.map((card) => {
             const extras = sellableCount(card, reserved.get(card.id) ?? 0);
-            const chosen = selling && selected.has(card.id);
+            const chosenQty = selling ? selected[card.id] ?? 0 : 0;
             return (
               <Pressable
                 key={card.id}
-                disabled={!picking && !(selling && extras > 0)}
-                onPress={() => (picking ? placeBinderCard(card.id) : toggleCard(card.id))}
-                style={[styles.cell, picking && placed.has(card.id) && styles.placed, chosen && styles.chosen]}
+                disabled={selling && extras <= 0}
+                onPress={() => {
+                  if (picking) {
+                    placeBinderCard(card.id);
+                    return;
+                  }
+                  if (selling) {
+                    pickSellCard(card, extras);
+                    return;
+                  }
+                  setInspectCard(card);
+                }}
+                style={[styles.cell, picking && placed.has(card.id) && styles.placed, chosenQty > 0 && styles.chosen]}
               >
                 <TradingCard card={{ ...card, pullId: card.id }} compact count={card.count} />
                 {picking && placed.has(card.id) ? <Text style={styles.inBinder}>Dans le classeur</Text> : null}
                 {selling ? (
                   <Text style={styles.sellPrice}>
-                    {extras > 0 ? `${formatBerries(sellPrice(card))} · ×${extras}` : 'Dans le classeur'}
+                    {extras > 0
+                      ? `${formatBerries(sellPrice(card))} · ×${chosenQty || extras}`
+                      : 'Dans le classeur'}
                   </Text>
                 ) : null}
               </Pressable>
@@ -142,24 +179,55 @@ export function LibraryScreen() {
         </View>
       </ScrollView>
 
-      {selling ? (
-        <View style={[styles.sellBar, { bottom: TAB_BAR_HEIGHT + insets.bottom }]}>
-          <Pressable onPress={() => setTab('boosters')} style={styles.cancel}>
-            <Text style={styles.cancelText}>Retour boutique</Text>
-          </Pressable>
-          <Pressable
-            disabled={selectedPayout.copies === 0}
-            onPress={() => sellIds([...selected])}
-            style={[styles.sellNow, selectedPayout.copies === 0 && styles.sellNowOff]}
-          >
-            <Text style={styles.sellNowText}>
-              {selectedPayout.copies
-                ? `Vendre ${selectedPayout.copies} · +${formatBerries(selectedPayout.berries)}`
-                : 'Choisir des cartes'}
-            </Text>
-          </Pressable>
-        </View>
+      {selling && selectedPayout.copies ? (
+        <Pressable
+          onPress={() => sellAmounts(selected)}
+          style={[styles.sellNow, { bottom: TAB_BAR_HEIGHT + insets.bottom + 12 }]}
+        >
+          <Text style={styles.sellNowText}>
+            Vendre {selectedPayout.copies} · +{formatBerries(selectedPayout.berries)}
+          </Text>
+        </Pressable>
       ) : null}
+
+      <CardInspectModal
+        card={inspectCard ? { ...inspectCard, pullId: inspectCard.id } : null}
+        onClose={() => setInspectCard(null)}
+      />
+
+      <Modal transparent visible={qtyCard != null} animationType="fade" onRequestClose={() => setQtyCard(null)}>
+        <Pressable style={styles.qtyBackdrop} onPress={() => setQtyCard(null)}>
+          <Pressable style={styles.qtyCard} onPress={() => {}}>
+            <Text style={styles.qtyTitle}>Combien en vendre ?</Text>
+            <Text style={styles.qtyName} numberOfLines={2}>{qtyCard?.card.name}</Text>
+            <Text style={styles.qtyMeta}>{qtyCard?.max} exemplaire{(qtyCard?.max ?? 0) > 1 ? 's' : ''} vendable{(qtyCard?.max ?? 0) > 1 ? 's' : ''}</Text>
+            <View style={styles.qtyRow}>
+              <Pressable
+                style={styles.qtyStep}
+                onPress={() => setQtyCard((current) => current ? { ...current, qty: Math.max(1, current.qty - 1) } : current)}
+              >
+                <Text style={styles.qtyStepText}>−</Text>
+              </Pressable>
+              <Text style={styles.qtyValue}>{qtyCard?.qty}</Text>
+              <Pressable
+                style={styles.qtyStep}
+                onPress={() => setQtyCard((current) => current ? { ...current, qty: Math.min(current.max, current.qty + 1) } : current)}
+              >
+                <Text style={styles.qtyStepText}>+</Text>
+              </Pressable>
+            </View>
+            <Text style={styles.qtyPayout}>
+              +{formatBerries((qtyCard?.qty ?? 0) * sellPrice(qtyCard?.card ?? { rarity: 'C' }))} Berrys
+            </Text>
+            <Pressable style={styles.qtyConfirm} onPress={confirmQty}>
+              <Text style={styles.qtyConfirmText}>Ajouter à la vente</Text>
+            </Pressable>
+            <Pressable onPress={() => setQtyCard(null)}>
+              <Text style={styles.qtyCancel}>Annuler</Text>
+            </Pressable>
+          </Pressable>
+        </Pressable>
+      </Modal>
     </LinearGradient>
   );
 }
@@ -205,36 +273,29 @@ const styles = StyleSheet.create({
   chosen: { borderWidth: 2, borderColor: colors.gold, borderRadius: 10, padding: 4 },
   inBinder: { color: colors.goldDim, fontSize: 11, marginTop: 6, fontWeight: '700' },
   sellPrice: { color: colors.gold, fontSize: 11, marginTop: 6, fontWeight: '700' },
-  sellBar: {
-    position: 'absolute',
-    left: 0,
-    right: 0,
-    flexDirection: 'row',
-    gap: 8,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    backgroundColor: 'rgba(12, 7, 5, 0.94)',
-    borderTopWidth: 1,
-    borderTopColor: '#80642c',
-  },
-  cancel: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderWidth: 1,
-    borderColor: colors.goldDim,
-    borderRadius: 12,
-    paddingVertical: 12,
-  },
-  cancelText: { color: colors.gold, fontWeight: '800' },
   sellNow: {
-    flex: 1.4,
+    position: 'absolute',
+    alignSelf: 'center',
+    left: 24,
+    right: 24,
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: colors.gold,
-    borderRadius: 12,
-    paddingVertical: 12,
+    borderRadius: 14,
+    paddingVertical: 14,
   },
-  sellNowOff: { opacity: 0.4 },
-  sellNowText: { color: '#1a1208', fontWeight: '900' },
+  sellNowText: { color: '#1a1208', fontWeight: '900', fontSize: 16 },
+  qtyBackdrop: { flex: 1, backgroundColor: 'rgba(8, 4, 2, 0.72)', alignItems: 'center', justifyContent: 'center', padding: 24 },
+  qtyCard: { width: '100%', maxWidth: 340, backgroundColor: '#1a100c', borderColor: colors.gold, borderWidth: 1, borderRadius: 18, padding: 20, alignItems: 'center' },
+  qtyTitle: { color: colors.gold, fontWeight: '900', fontSize: 16 },
+  qtyName: { color: colors.white, fontWeight: '800', fontSize: 18, marginTop: 8, textAlign: 'center' },
+  qtyMeta: { color: colors.muted, marginTop: 6 },
+  qtyRow: { flexDirection: 'row', alignItems: 'center', gap: 18, marginTop: 18 },
+  qtyStep: { width: 44, height: 44, borderRadius: 22, borderColor: colors.gold, borderWidth: 1, alignItems: 'center', justifyContent: 'center' },
+  qtyStepText: { color: colors.gold, fontSize: 24, fontWeight: '800', marginTop: -2 },
+  qtyValue: { color: colors.white, fontSize: 28, fontWeight: '900', minWidth: 36, textAlign: 'center' },
+  qtyPayout: { color: '#7ed0a1', fontWeight: '800', marginTop: 12 },
+  qtyConfirm: { marginTop: 16, backgroundColor: colors.gold, borderRadius: 12, paddingHorizontal: 18, paddingVertical: 12 },
+  qtyConfirmText: { color: '#1a1208', fontWeight: '900' },
+  qtyCancel: { color: colors.muted, marginTop: 12, fontWeight: '700' },
 });

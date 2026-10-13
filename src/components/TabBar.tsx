@@ -1,3 +1,4 @@
+import Ionicons from '@expo/vector-icons/Ionicons';
 import { Pressable, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
@@ -6,11 +7,11 @@ import { colors } from '../theme';
 
 export const TAB_BAR_HEIGHT = 82;
 
-const TABS: { id: TabId; label: string; mark: string }[] = [
-  { id: 'library', label: 'Bibliothèque', mark: '▤' },
-  { id: 'boosters', label: 'Shop', mark: '⌂' },
-  { id: 'binder', label: 'Classeur', mark: '▣' },
-  { id: 'account', label: 'Compte', mark: '☺' },
+const TABS: { id: TabId; label: string; icon: keyof typeof Ionicons.glyphMap; iconOn: keyof typeof Ionicons.glyphMap }[] = [
+  { id: 'boosters', label: 'Shop', icon: 'storefront-outline', iconOn: 'storefront' },
+  { id: 'library', label: 'Bibliothèque', icon: 'albums-outline', iconOn: 'albums' },
+  { id: 'binder', label: 'Classeur', icon: 'book-outline', iconOn: 'book' },
+  { id: 'account', label: 'Compte', icon: 'person-circle-outline', iconOn: 'person-circle' },
 ];
 
 type Props = {
@@ -33,8 +34,9 @@ export function TabBar({ active, onChange }: Props) {
             onPress={() => onChange(tab.id)}
             style={[styles.tab, { width: tabWidth }, on && styles.tabOn]}
             accessibilityRole="tab"
+            accessibilityLabel={tab.label}
           >
-            <Text style={[styles.mark, on && styles.markOn]}>{tab.mark}</Text>
+            <Ionicons name={on ? tab.iconOn : tab.icon} size={22} color={on ? colors.gold : colors.muted} />
             <Text style={[styles.label, on && styles.labelOn]} numberOfLines={1}>
               {tab.label}
             </Text>
@@ -61,8 +63,6 @@ const styles = StyleSheet.create({
   },
   tab: { alignItems: 'center', justifyContent: 'center', gap: 4, borderRadius: 12, height: '100%' },
   tabOn: { backgroundColor: '#2a2214' },
-  mark: { color: colors.muted, fontSize: 16 },
-  markOn: { color: colors.gold },
   label: { color: colors.muted, fontSize: 10, fontWeight: '700', letterSpacing: 0.3 },
   labelOn: { color: colors.gold },
 });

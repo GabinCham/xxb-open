@@ -53,21 +53,29 @@ function parseNum(value: string | null): number | undefined {
   return Number.isFinite(n) ? n : undefined;
 }
 
+function isSpReprint(raw: ApiCard) {
+  const name = raw.card_name;
+  if (!/\(sp\)/i.test(name) && raw.rarity !== 'SP') return false;
+  const reprint = / -\s*(OP|EB|ST|PR)\s*\d/i.test(name) || /_p\d/i.test(raw.card_image_id || '');
+  return reprint || raw.rarity === 'SP';
+}
+
 function classify(raw: ApiCard): { finish: Finish; variantLabel?: string } | null {
   const name = raw.card_name;
   if (/box topper/i.test(name)) return null;
 
   if (/manga/i.test(name)) return { finish: 'manga', variantLabel: 'MANGA' };
   if (/super alt|saa/i.test(name)) return { finish: 'saa', variantLabel: 'SAA' };
-  if (/\(sp\)/i.test(name) || raw.rarity === 'SP') return { finish: 'sp', variantLabel: 'SP' };
+  if (/wanted poster/i.test(name)) return { finish: 'poster', variantLabel: 'POSTER' };
   if (/\(tr\)/i.test(name) || raw.rarity === 'TR') return { finish: 'tr', variantLabel: 'TR' };
-  if (/wanted poster/i.test(name)) return { finish: 'sp', variantLabel: 'POSTER' };
+  if (isSpReprint(raw)) return { finish: 'sp', variantLabel: 'SP' };
 
   const isAlt = /parallel|alternate art/i.test(name) || /_p\d/i.test(raw.card_image_id);
   if (isAlt && (raw.rarity === 'L' || raw.card_type === 'Leader')) {
     return { finish: 'laa', variantLabel: 'LAA' };
   }
   if (isAlt) return { finish: 'aa', variantLabel: 'AA' };
+  if (raw.rarity === 'SEC') return { finish: 'base', variantLabel: 'SEC' };
   return { finish: 'base' };
 }
 

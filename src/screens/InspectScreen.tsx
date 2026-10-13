@@ -10,7 +10,7 @@ import { useGame } from '../game/GameContext';
 import { colors } from '../theme';
 
 export function InspectScreen({ overlay = false }: { overlay?: boolean }) {
-  const { selectedSet, startReveal, goHome, displayPacksRemaining } = useGame();
+  const { selectedSet, startReveal, goHome, displayPacksRemaining, displaySession, openingGift } = useGame();
   const [opening, setOpening] = useState(false);
   const scale = useSharedValue(1);
   const rotate = useSharedValue(0);
@@ -23,13 +23,13 @@ export function InspectScreen({ overlay = false }: { overlay?: boolean }) {
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
     }
     scale.value = withSequence(
-      withTiming(1.08, { duration: 160 }),
-      withTiming(1.22, { duration: 180 }),
-      withTiming(0.2, { duration: 320, easing: Easing.in(Easing.cubic) }),
+      withTiming(1.08, { duration: 90 }),
+      withTiming(1.18, { duration: 100 }),
+      withTiming(0.2, { duration: 180, easing: Easing.in(Easing.cubic) }),
     );
-    rotate.value = withTiming(8, { duration: 420 });
-    opacity.value = withTiming(0, { duration: 480 });
-    setTimeout(startReveal, 520);
+    rotate.value = withTiming(8, { duration: 240 });
+    opacity.value = withTiming(0, { duration: 260 });
+    setTimeout(startReveal, 280);
   };
 
   const packStyle = useAnimatedStyle(() => ({
@@ -49,9 +49,11 @@ export function InspectScreen({ overlay = false }: { overlay?: boolean }) {
       <Text style={styles.lead}>
         {opening
           ? 'Le paquet se déchire…'
-          : displayPacksRemaining
+            : displaySession && displayPacksRemaining
             ? `Display OP-13 · ${displayPacksRemaining} booster${displayPacksRemaining > 1 ? 's' : ''} restant${displayPacksRemaining > 1 ? 's' : ''}`
-            : 'Appuie sur le booster pour l’ouvrir'}
+            : openingGift
+              ? 'Cadeau du 1er jour — appuie pour l’ouvrir'
+              : 'Appuie sur le booster pour l’ouvrir'}
       </Text>
 
       <Pressable onPress={open} style={styles.stage}>

@@ -3,11 +3,13 @@ import { createContext, useContext, useEffect, useMemo, useRef, useState, type R
 
 import { useAuth } from '../auth/AuthContext';
 import { roundBerries } from '../data/berries';
-import { addPulls, type OwnedCard } from '../data/collection';
+import { addPulls, repairCollection, type OwnedCard } from '../data/collection';
 import { loadCatalog } from '../data/catalog';
+import { isHitCard } from '../data/hits';
 import { openBooster } from '../data/openPack';
 import { removeCopies, sellableCount, sellPrice } from '../data/sell';
-import { BOOSTER_SETS, boosterPrice } from '../data/sets';
+import { BOOSTER_SETS, boosterPrice, DEV_GRANT_BERRIES } from '../data/sets';
+import { emptyOpenStats, mergeOpenStats, packStatId, parseOpenStats, type OpenStats } from '../data/stats';
 import type { BoosterSet, PulledCard } from '../data/types';
 import { supabase } from '../lib/supabase';
 
@@ -16,13 +18,18 @@ const COINS_LAST_EARNED_AT_KEY = 'op-tcg-coins-last-earned-at';
 const COINS_VERSION_KEY = 'op-tcg-coins-version';
 const COLLECTION_KEY = 'op-tcg-collection';
 const BINDER_KEY = 'op-tcg-binder';
+const STATS_KEY = 'op-tcg-open-stats';
+const DISPLAY_KEY = 'op-tcg-display-progress';
+const WELCOME_KEY = 'op-tcg-welcome-gift';
+const WELCOME_PACK = 'op13';
+const WELCOME_CLAIMED = 'claimed';
 const PAGE = 4;
 const COINS_PER_INTERVAL = 60;
 const COIN_INTERVAL_MS = 15 * 60 * 1000;
 const STARTING_COINS = 60;
 const COINS_VERSION = '2';
 export const OP13_DISPLAY_PRICE = 1500;
-const OP13_DISPLAY_PACKS = 24;
+export const OP13_DISPLAY_PACKS = 24;
 const OP13_DISPLAY_HITS = 3;
 
 function emptyPage(): (string | null)[] {
@@ -46,13 +53,51 @@ function mergeOwned(left: OwnedCard[], right: OwnedCard[]): OwnedCard[] {
   return [...map.values()];
 }
 
+type DisplayProgress = { epoch: number; queue: string[] };
+
 type PlayerSnapshot = {
   userId: string | null;
   coins: number;
   lastCoinEarnedAt: number;
   collection: OwnedCard[];
   binderSlots: (string | null)[];
+  stats: OpenStats;
+  display: DisplayProgress;
+  welcomeGift: string | null;
 };
+
+function emptyDisplay(): DisplayProgress {
+  return { epoch: 0, queue: [] };
+}
+
+function parseDisplay(value: unknown): DisplayProgress {
+  const allowed = (id: unknown): id is string => id === 'op13' || id === 'op13-hits';
+  if (Array.isArray(value)) {
+    const queue = value.filter(allowed);
+    return { epoch: queue.length ? 1 : 0, queue };
+  }
+  if (!value || typeof value !== 'object') return emptyDisplay();
+  const raw = value as { epoch?: unknown; queue?: unknown };
+  const queue = Array.isArray(raw.queue) ? raw.queue.filter(allowed) : [];
+  return { epoch: Math.max(0, Math.floor(Number(raw.epoch) || 0)), queue };
+}
+
+function mergeDisplay(left: DisplayProgress, right: DisplayProgress): DisplayProgress {
+  if (left.epoch !== right.epoch) return left.epoch > right.epoch ? left : right;
+  return left.queue.length <= right.queue.length ? left : right;
+}
+
+function parseWelcomeGift(value: unknown): string | null {
+  if (value == null || value === '') return null;
+  const text = String(value);
+  if (text === WELCOME_CLAIMED) return WELCOME_CLAIMED;
+  return BOOSTER_SETS.some((set) => set.id === text) ? text : WELCOME_PACK;
+}
+
+function mergeWelcomeGift(left: string | null, right: string | null): string | null {
+  if (left === WELCOME_CLAIMED || right === WELCOME_CLAIMED) return WELCOME_CLAIMED;
+  return left ?? right;
+}
 
 function mergeBinder(left: (string | null)[], right: (string | null)[]): (string | null)[] {
   const length = Math.max(left.length, right.length, PAGE);
@@ -85,11 +130,17 @@ type GameContextValue = {
   binderSlots: (string | null)[];
   pickSlot: number | null;
   selling: boolean;
+  openStats: OpenStats;
   displayPacksRemaining: number;
+  displaySession: boolean;
+  welcomeGiftPackId: string | null;
+  openingGift: boolean;
+  openWelcomeGift: () => void;
   startSelling: () => void;
-  sellCards: (cardIds: string[]) => number;
+  sellCards: (amounts: Record<string, number>) => number;
   selectSet: (id: string) => void;
   selectOp13Display: () => void;
+  resumeDisplay: () => void;
   startReveal: () => void;
   finishReveal: () => void;
   continueDisplay: () => void;
@@ -118,7 +169,11 @@ export function GameProvider({ children }: { children: ReactNode }) {
   const [binderSlots, setBinderSlots] = useState<(string | null)[]>(emptyPage());
   const [pickSlot, setPickSlot] = useState<number | null>(null);
   const [selling, setSelling] = useState(false);
-  const [displayQueue, setDisplayQueue] = useState<string[]>([]);
+  const [openStats, setOpenStats] = useState<OpenStats>(emptyOpenStats);
+  const [display, setDisplay] = useState<DisplayProgress>(emptyDisplay);
+  const [displaySession, setDisplaySession] = useState(false);
+  const [welcomeGift, setWelcomeGift] = useState<string | null>(null);
+  const [openingGift, setOpeningGift] = useState(false);
   const remoteSynced = useRef(false);
   const snapshot = useRef<PlayerSnapshot>({
     userId: user?.id ?? null,
@@ -126,6 +181,9 @@ export function GameProvider({ children }: { children: ReactNode }) {
     lastCoinEarnedAt,
     collection,
     binderSlots,
+    stats: openStats,
+    display,
+    welcomeGift,
   });
   snapshot.current = {
     userId: user?.id ?? null,
@@ -133,6 +191,9 @@ export function GameProvider({ children }: { children: ReactNode }) {
     lastCoinEarnedAt,
     collection,
     binderSlots,
+    stats: openStats,
+    display,
+    welcomeGift,
   };
 
   useEffect(() => {
@@ -141,7 +202,8 @@ export function GameProvider({ children }: { children: ReactNode }) {
         const savedCoins = storedCoins == null ? Number.NaN : Number(storedCoins);
         const savedAt = storedAt == null ? Number.NaN : Number(storedAt);
         const isNewEconomy = version !== COINS_VERSION;
-        const baseCoins = isNewEconomy || !Number.isFinite(savedCoins) ? STARTING_COINS : savedCoins;
+        const loadedCoins = isNewEconomy || !Number.isFinite(savedCoins) ? STARTING_COINS : savedCoins;
+        const baseCoins = DEV_GRANT_BERRIES ? Math.max(loadedCoins, DEV_GRANT_BERRIES) : loadedCoins;
         const baseAt = isNewEconomy || !Number.isFinite(savedAt) || savedAt <= 0 ? Date.now() : savedAt;
         // A reward is granted once per qualifying app launch. Time spent away
         // from the app never stacks multiple rewards.
@@ -155,12 +217,21 @@ export function GameProvider({ children }: { children: ReactNode }) {
         }
       }),
       AsyncStorage.getItem(COLLECTION_KEY).then((value) => {
-        if (value) setCollection(JSON.parse(value) as OwnedCard[]);
+        if (value) setCollection(repairCollection(JSON.parse(value) as OwnedCard[]));
       }),
       AsyncStorage.getItem(BINDER_KEY).then((value) => {
         if (!value) return;
         const parsed = JSON.parse(value) as (string | null)[];
         if (Array.isArray(parsed)) setBinderSlots(withTrailingPage(parsed));
+      }),
+      AsyncStorage.getItem(STATS_KEY).then((value) => {
+        if (value) setOpenStats(parseOpenStats(JSON.parse(value)));
+      }),
+      AsyncStorage.getItem(DISPLAY_KEY).then((value) => {
+        if (value) setDisplay(parseDisplay(JSON.parse(value)));
+      }),
+      AsyncStorage.getItem(WELCOME_KEY).then((value) => {
+        if (value) setWelcomeGift(parseWelcomeGift(value));
       }),
       loadCatalog(),
     ]).finally(() => setLocalReady(true));
@@ -174,11 +245,22 @@ export function GameProvider({ children }: { children: ReactNode }) {
 
     const syncAccount = async () => {
       const local = snapshot.current;
-      const { data, error } = await supabase
+      const accountSelect =
+        'coins, last_coin_earned_at, collection, binder_slots, boosters_opened, hits_pulled, berries_spent, display_progress, welcome_gift';
+      let { data, error } = await supabase
         .from('booster_player_state')
-        .select('coins, last_coin_earned_at, collection, binder_slots')
+        .select(accountSelect)
         .eq('user_id', user.id)
         .maybeSingle();
+      if (error) {
+        const fallback = await supabase
+          .from('booster_player_state')
+          .select('coins, last_coin_earned_at, collection, binder_slots, boosters_opened, hits_pulled, berries_spent, display_progress')
+          .eq('user_id', user.id)
+          .maybeSingle();
+        data = fallback.data;
+        error = fallback.error;
+      }
 
       if (!mounted) return;
 
@@ -186,26 +268,41 @@ export function GameProvider({ children }: { children: ReactNode }) {
       const remoteBinder = Array.isArray(data?.binder_slots)
         ? withTrailingPage(data.binder_slots as (string | null)[])
         : emptyPage();
-      const nextCollection = mergeOwned(local.collection, remoteCollection);
+      const nextCollection = repairCollection(mergeOwned(local.collection, remoteCollection));
       const nextBinder = mergeBinder(local.binderSlots, remoteBinder);
+      const nextStats = mergeOpenStats(local.stats, parseOpenStats({
+        boostersOpened: data?.boosters_opened,
+        hitsPulled: data?.hits_pulled,
+        berriesSpent: data?.berries_spent,
+      }));
+      const nextDisplay = mergeDisplay(local.display, parseDisplay(data?.display_progress));
+      const nextWelcomeGift =
+        mergeWelcomeGift(local.welcomeGift, parseWelcomeGift(data?.welcome_gift)) ?? WELCOME_PACK;
       const savedCoins = Math.max(0, Number(data?.coins) || 0);
       const savedAt = Date.parse(data?.last_coin_earned_at ?? '');
       const baseAt = Number.isFinite(savedAt) ? savedAt : local.lastCoinEarnedAt;
       const earnLoginBonus = Date.now() - baseAt >= COIN_INTERVAL_MS;
-      const nextCoins = Math.max(savedCoins, local.coins) + (earnLoginBonus ? COINS_PER_INTERVAL : 0);
+      const mergedCoins = Math.max(savedCoins, local.coins, DEV_GRANT_BERRIES);
+      const nextCoins = mergedCoins + (earnLoginBonus ? COINS_PER_INTERVAL : 0);
       const nextAt = earnLoginBonus ? Date.now() : baseAt;
 
       setCoins(nextCoins);
       setLastCoinEarnedAt(nextAt);
       setCollection(nextCollection);
       setBinderSlots(nextBinder);
-      snapshot.current = { ...local, coins: nextCoins, lastCoinEarnedAt: nextAt, collection: nextCollection, binderSlots: nextBinder };
+      setOpenStats(nextStats);
+      setDisplay(nextDisplay);
+      setWelcomeGift(nextWelcomeGift);
+      snapshot.current = { ...local, coins: nextCoins, lastCoinEarnedAt: nextAt, collection: nextCollection, binderSlots: nextBinder, stats: nextStats, display: nextDisplay, welcomeGift: nextWelcomeGift };
       AsyncStorage.multiSet([
         [COINS_KEY, String(nextCoins)],
         [COINS_LAST_EARNED_AT_KEY, String(nextAt)],
         [COINS_VERSION_KEY, COINS_VERSION],
         [COLLECTION_KEY, JSON.stringify(nextCollection)],
         [BINDER_KEY, JSON.stringify(nextBinder)],
+        [STATS_KEY, JSON.stringify(nextStats)],
+        [DISPLAY_KEY, JSON.stringify(nextDisplay)],
+        [WELCOME_KEY, nextWelcomeGift ?? ''],
       ]).catch(() => {});
 
       remoteSynced.current = true;
@@ -215,6 +312,11 @@ export function GameProvider({ children }: { children: ReactNode }) {
         last_coin_earned_at: new Date(nextAt).toISOString(),
         collection: nextCollection,
         binder_slots: nextBinder,
+        boosters_opened: nextStats.boostersOpened,
+        hits_pulled: nextStats.hitsPulled,
+        berries_spent: nextStats.berriesSpent,
+        display_progress: nextDisplay,
+        welcome_gift: nextWelcomeGift,
         updated_at: new Date().toISOString(),
       }, { onConflict: 'user_id' });
       if (saveError && error) {
@@ -243,6 +345,11 @@ export function GameProvider({ children }: { children: ReactNode }) {
       last_coin_earned_at: new Date(next.lastCoinEarnedAt).toISOString(),
       collection: next.collection,
       binder_slots: next.binderSlots,
+      boosters_opened: next.stats.boostersOpened,
+      hits_pulled: next.stats.hitsPulled,
+      berries_spent: next.stats.berriesSpent,
+      display_progress: next.display,
+      welcome_gift: next.welcomeGift,
       updated_at: new Date().toISOString(),
     }, { onConflict: 'user_id' }).then(({ error }) => {
       if (error) console.warn('Sauvegarde compte impossible', error.message);
@@ -265,14 +372,15 @@ export function GameProvider({ children }: { children: ReactNode }) {
     return reserved;
   };
 
-  const sellFromCollection = (ids: string[]) => {
-    const wanted = new Set(ids);
+  const sellFromCollection = (wanted: Record<string, number>) => {
     const reserved = reservedBinderCopies(binderSlots);
     const amounts = new Map<string, number>();
     let payout = 0;
     for (const card of collection) {
-      if (!wanted.has(card.id)) continue;
-      const take = sellableCount(card, reserved.get(card.id) ?? 0);
+      const take = Math.min(
+        Math.max(0, Math.floor(Number(wanted[card.id]) || 0)),
+        sellableCount(card, reserved.get(card.id) ?? 0),
+      );
       if (take <= 0) continue;
       amounts.set(card.id, take);
       payout += take * sellPrice(card);
@@ -294,6 +402,24 @@ export function GameProvider({ children }: { children: ReactNode }) {
     setBinderSlots(slots);
     AsyncStorage.setItem(BINDER_KEY, JSON.stringify(slots)).catch(() => {});
     persistRemote({ binderSlots: slots });
+  };
+
+  const persistStats = (next: OpenStats) => {
+    setOpenStats(next);
+    AsyncStorage.setItem(STATS_KEY, JSON.stringify(next)).catch(() => {});
+    persistRemote({ stats: next });
+  };
+
+  const persistDisplay = (next: DisplayProgress) => {
+    setDisplay(next);
+    AsyncStorage.setItem(DISPLAY_KEY, JSON.stringify(next)).catch(() => {});
+    persistRemote({ display: next });
+  };
+
+  const persistWelcomeGift = (next: string | null) => {
+    setWelcomeGift(next);
+    AsyncStorage.setItem(WELCOME_KEY, next ?? '').catch(() => {});
+    persistRemote({ welcomeGift: next });
   };
 
   useEffect(() => {
@@ -326,7 +452,24 @@ export function GameProvider({ children }: { children: ReactNode }) {
       binderSlots,
       pickSlot,
       selling,
-      displayPacksRemaining: displayQueue.length,
+      openStats,
+      displayPacksRemaining: display.queue.length,
+      displaySession,
+      welcomeGiftPackId: welcomeGift && welcomeGift !== WELCOME_CLAIMED ? welcomeGift : null,
+      openingGift,
+      openWelcomeGift: () => {
+        if (!welcomeGift || welcomeGift === WELCOME_CLAIMED) return;
+        const pack = BOOSTER_SETS.find((item) => item.id === welcomeGift);
+        if (!pack) return;
+        setOpeningGift(true);
+        setDisplaySession(false);
+        setSelectedSet(pack);
+        setPulls([]);
+        setPickSlot(null);
+        setSelling(false);
+        setActiveTab('boosters');
+        setPhase('inspect');
+      },
       startSelling: () => {
         setSelling(true);
         setPickSlot(null);
@@ -338,6 +481,9 @@ export function GameProvider({ children }: { children: ReactNode }) {
         const set = BOOSTER_SETS.find((item) => item.id === id);
         if (!set || coins < boosterPrice(id)) return;
         persistCoins(coins - boosterPrice(id));
+        persistStats({ ...openStats, berriesSpent: roundBerries(openStats.berriesSpent + boosterPrice(id)) });
+        setOpeningGift(false);
+        setDisplaySession(false);
         setSelectedSet(set);
         setPulls(openBooster(id));
         setPickSlot(null);
@@ -345,21 +491,36 @@ export function GameProvider({ children }: { children: ReactNode }) {
         setActiveTab('boosters');
         setPhase('inspect');
       },
-      selectOp13Display: () => {
-        if (coins < OP13_DISPLAY_PRICE) return;
-        const set = BOOSTER_SETS.find((item) => item.id === 'op13');
-        if (!set) return;
-        persistCoins(coins - OP13_DISPLAY_PRICE);
-        setDisplayQueue(op13DisplayQueue());
-        setSelectedSet(set);
+      resumeDisplay: () => {
+        if (!display.queue.length) return;
+        const pack = BOOSTER_SETS.find((item) => item.id === display.queue[0]);
+        if (!pack) return;
+        setOpeningGift(false);
+        setDisplaySession(true);
+        setSelectedSet(pack);
         setPulls([]);
         setPickSlot(null);
         setSelling(false);
         setActiveTab('boosters');
         setPhase('inspect');
       },
+      selectOp13Display: () => {
+        if (display.queue.length) return;
+        if (coins < OP13_DISPLAY_PRICE) return;
+        persistCoins(coins - OP13_DISPLAY_PRICE);
+        persistStats({ ...openStats, berriesSpent: roundBerries(openStats.berriesSpent + OP13_DISPLAY_PRICE) });
+        persistDisplay({ epoch: display.epoch + 1, queue: op13DisplayQueue() });
+        setOpeningGift(false);
+        setDisplaySession(false);
+        setSelectedSet(null);
+        setPulls([]);
+        setPickSlot(null);
+        setSelling(false);
+        setActiveTab('boosters');
+        setPhase('select');
+      },
       startReveal: () => {
-        const packId = displayQueue[0] ?? selectedSet?.id;
+        const packId = selectedSet?.id;
         const set = BOOSTER_SETS.find((item) => item.id === packId);
         if (!packId || !set) return;
         setSelectedSet(set);
@@ -368,19 +529,32 @@ export function GameProvider({ children }: { children: ReactNode }) {
       },
       finishReveal: () => {
         persistCollection(addPulls(collection, pulls));
+        const packId = packStatId(selectedSet?.id ?? '');
+        persistStats({
+          ...openStats,
+          boostersOpened: packId
+            ? { ...openStats.boostersOpened, [packId]: (openStats.boostersOpened[packId] ?? 0) + 1 }
+            : openStats.boostersOpened,
+          hitsPulled: openStats.hitsPulled + pulls.filter(isHitCard).length,
+        });
+        if (displaySession && display.queue.length) {
+          persistDisplay({ ...display, queue: display.queue.slice(1) });
+        }
+        if (openingGift) {
+          persistWelcomeGift(WELCOME_CLAIMED);
+          setOpeningGift(false);
+        }
         setPhase('summary');
       },
       continueDisplay: () => {
-        if (displayQueue.length <= 1) {
-          setDisplayQueue([]);
+        if (!display.queue.length) {
+          setDisplaySession(false);
           setSelectedSet(null);
           setPulls([]);
           setPhase('select');
           return;
         }
-        const nextQueue = displayQueue.slice(1);
-        const nextSet = BOOSTER_SETS.find((item) => item.id === nextQueue[0]);
-        setDisplayQueue(nextQueue);
+        const nextSet = BOOSTER_SETS.find((item) => item.id === display.queue[0]);
         setSelectedSet(nextSet ?? null);
         setPulls([]);
         setPhase('inspect');
@@ -390,9 +564,10 @@ export function GameProvider({ children }: { children: ReactNode }) {
         setSelling(false);
         setActiveTab('boosters');
         setPhase('select');
+        setDisplaySession(false);
+        setOpeningGift(false);
         setSelectedSet(null);
         setPulls([]);
-        setDisplayQueue([]);
       },
       goLibrary: () => {
         setPhase('select');
@@ -433,7 +608,7 @@ export function GameProvider({ children }: { children: ReactNode }) {
         setActiveTab('binder');
       },
     }),
-    [localReady, remoteReady, coins, clock, lastCoinEarnedAt, phase, tab, selectedSet, pulls, collection, binderSlots, pickSlot, selling, displayQueue],
+    [localReady, remoteReady, coins, clock, lastCoinEarnedAt, phase, tab, selectedSet, pulls, collection, binderSlots, pickSlot, selling, openStats, display, displaySession, welcomeGift, openingGift],
   );
 
   return <GameContext.Provider value={value}>{children}</GameContext.Provider>;
